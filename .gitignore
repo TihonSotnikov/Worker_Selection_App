@@ -209,3 +209,7 @@ __marimo__/
 
 
 my_ТЗ.md
+
+*.db
+*.sqlite3
+Worker_Selection_App
