@@ -10,6 +10,11 @@ from app.core.config import settings
 from app.core.schemas import CandidateVector, CandidateResult
 from app.core.enums import ShiftPreference
 from app.api.models_db import CandidateTable
+from app.ai.transcriber import transcriber
+from app.ai.extractor import extractor
+from app.ai.extractor import SYSTEM_PROMPT_EXTRACT
+
+ext = extractor("Qwen/Qwen3-1.7B")
 
 
 async def save_upload_file(upload_file: UploadFile) -> Path:
@@ -46,44 +51,15 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
     return file_path
 
 
-async def mock_ai_extract(file_path: Path) -> Tuple[str, str, CandidateVector]:
-    """Заглушка для модуля AI (экстракция данных из резюме)."""
+async def ai_extract(file_path: Path) -> Tuple[str, str, CandidateVector]:
+    """AI экстракция данных из резюме."""
 
-    full_name = "Иван Петрович Сидоров"
-    raw_summary = "Опытный токарь с 5-летним стажем. Имеет сертификат ЧПУ. Живёт недалеко от завода."
+    with open(file_path, "r", encoding="utf-8") as f:
+        resume_text = f.read()
 
-    vector = CandidateVector(
-        skills_verified_count=3,
-        years_experience=5.0,
-        commute_time_minutes=25,
-        shift_preference=ShiftPreference.DAY_ONLY,
-        salary_expectation=60000,
-        has_certifications=True
-    )
+    vector, name, summary = ext(resume_text)
 
-    return full_name, raw_summary, vector
-
-
-"""async def mock_ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
-    Заглушка для модуля ML (предсказание удержания).
-
-    score = 0.85
-    risks = []
-
-    if vector.commute_time_minutes > 60:
-        score -= 0.3
-        risks.append("Долгая дорога до работы (>60 мин)")
-
-    if not vector.has_certifications:
-        score -= 0.1
-        risks.append("Отсутствуют сертификаты")
-
-    if vector.years_experience < 2.0:
-        score -= 0.2
-        risks.append("Недостаточный опыт (<2 лет)")
-
-    score = max(0.0, min(1.0, score))
-    return score, risks"""
+    return name, summary, vector
 
 
 async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
@@ -140,6 +116,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
         score = max(0.0, min(1.0, score))
         return score, risks
 
+
 async def process_candidate(
     upload_file: UploadFile,
     session: Session
@@ -173,9 +150,8 @@ async def process_candidate(
 
     file_path = await save_upload_file(upload_file)
 
-    full_name, raw_summary, vector = await mock_ai_extract(file_path)
+    full_name, raw_summary, vector = await ai_extract(file_path)
 
-    """retention_score, risk_factors = await mock_ml_predict(vector)"""
     retention_score, risk_factors = await ml_predict(vector)
 
     db_candidate = CandidateTable(
