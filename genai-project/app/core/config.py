@@ -16,16 +16,15 @@ class Settings(BaseSettings):
         По умолчанию: "not-set" (использование только для разработки/тестов).
     DATABASE_URL : str
         Строка подключения к SQL-базе данных.
-        По умолчанию: "sqlite:///./Worker_Selection_App.db" (локальный файл SQLite).
+        По умолчанию: "sqlite:///./genai.db" (локальный файл SQLite).
     UPLOAD_DIR : str
         Путь в файловой системе для временного хранения загруженных резюме.
-        По умолчанию: "/tmp/Worker_Selection_App_uploads".
+        По умолчанию: "/tmp/genai_uploads".
     """
 
     OPENAI_API_KEY: str = "not-set"
-    DATABASE_URL: str = "sqlite:///./Worker_Selection_App.db"
-    UPLOAD_DIR: str = "/tmp/Worker_Selection_App_uploads"
-    UPLOAD_DIR: str = "Worker_Selection_App"
+    DATABASE_URL: str = "sqlite:///./genai.db"
+    UPLOAD_DIR: str = "/tmp/genai_uploads"
 
     class Config:
         """Конфигурация Pydantic."""
@@ -35,3 +34,7 @@ class Settings(BaseSettings):
 # Создаётся единственный экземпляр, который импортируется по всему приложению.
 # Это немедленно запускает валидацию переменных окружения при импорте.
 settings = Settings()
+
+# Создание критически важных директорий при старте
+""" ========== ВОЗМОЖНО, СТОИТ ДЕЛАТЬ ПРИ СТАРТЕ MAIN В СОБЫТИИ lifespan ========== """
+os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
