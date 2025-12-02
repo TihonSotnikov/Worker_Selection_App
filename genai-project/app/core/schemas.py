@@ -49,7 +49,7 @@ class CandidateSummary(BaseModel):
     raw_summary: str = Field(..., description="Краткое резюме, сгенерированное LLM")
 
 
-class Candidateresult(BaseModel):
+class CandidateResult(BaseModel):
     """
     Финальный результат анализа кандидата.
 
