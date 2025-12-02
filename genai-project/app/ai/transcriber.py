@@ -1,5 +1,6 @@
 import torch
 <<<<<<< HEAD
+<<<<<<< HEAD
 import librosa
 import numpy as np
 from transformers import pipeline
@@ -10,8 +11,12 @@ import numpy as np
 from transformers import pipeline
 from faster_whisper import WhisperModel
 >>>>>>> 700d7a42a7cd7765a4e036b8432f8f677af0d13c
+=======
+import numpy as np
+from transformers import pipeline
+from faster_whisper import WhisperModel
+>>>>>>> 2aa28140476ea4e90b169bbb282e9cc45e9a3374
 
-# Убедитесь, что используете GPU, если есть (device=0), иначе уберите device
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 # device = "cpu"
 dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -33,11 +38,8 @@ class transcriber:
         return self._model.transcribe(*args, **kwds)
         # return self._pipeline(*args, **kwds)
 
-    def change_model(self, model_name, *args, **kwargs):
-        del self._model
-        self._model = WhisperModel(model_name)
-
 # "deepdml/faster-whisper-large-v3-turbo-ct2"
+<<<<<<< HEAD
 <<<<<<< HEAD
 trans = transcriber("medium", language="ru")
 
@@ -69,3 +71,6 @@ for segment in segments:
 #     for segment in segments:
 #         print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
 >>>>>>> 700d7a42a7cd7765a4e036b8432f8f677af0d13c
+=======
+# "medium"
+>>>>>>> 2aa28140476ea4e90b169bbb282e9cc45e9a3374
