@@ -33,6 +33,22 @@ class CandidateVector(BaseModel):
     has_certifications: bool = Field(..., description="Наличие сертификатов/корочек")
 
 
+class CandidateSummary(BaseModel):
+    """
+    Краткое резюме кандидата, сгенерированное LLM.
+
+    Attributes
+    ----------
+    full_name : str
+        Полное имя кандидата.
+    raw_summary : str
+        Краткое резюме, сгенерированное LLM.
+    """
+
+    full_name: str = Field(..., description="ФИО кандидата")
+    raw_summary: str = Field(..., description="Краткое резюме, сгенерированное LLM")
+
+
 class Candidateresult(BaseModel):
     """
     Финальный результат анализа кандидата.
