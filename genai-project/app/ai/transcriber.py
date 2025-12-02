@@ -1,9 +1,15 @@
 import torch
+<<<<<<< HEAD
 import librosa
 import numpy as np
 from transformers import pipeline
 from faster_whisper import WhisperModel
 from datasets import load_dataset
+=======
+import numpy as np
+from transformers import pipeline
+from faster_whisper import WhisperModel
+>>>>>>> 700d7a42a7cd7765a4e036b8432f8f677af0d13c
 
 # Убедитесь, что используете GPU, если есть (device=0), иначе уберите device
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -32,6 +38,7 @@ class transcriber:
         self._model = WhisperModel(model_name)
 
 # "deepdml/faster-whisper-large-v3-turbo-ct2"
+<<<<<<< HEAD
 trans = transcriber("medium", language="ru")
 
 filename = "test.wav"
@@ -44,3 +51,21 @@ segments, info = trans(
 
 for segment in segments:
     print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+=======
+# "medium"
+# trans = transcriber("deepdml/faster-whisper-large-v3-turbo-ct2", language="ru")
+
+# filename = "test.wav"
+# dataset = load_dataset("distil-whisper/librispeech_long", "clean", split="validation")
+# sample = dataset[0]["audio"]
+
+# for i in range(1, 4):
+#     print(f"Iter {i}:", i)
+
+#     segments, info = trans(
+#         filename, 
+#     )
+
+#     for segment in segments:
+#         print("[%.2fs -> %.2fs] %s" % (segment.start, segment.end, segment.text))
+>>>>>>> 700d7a42a7cd7765a4e036b8432f8f677af0d13c

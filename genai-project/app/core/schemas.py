@@ -33,7 +33,7 @@ class CandidateVector(BaseModel):
     has_certifications: bool = Field(..., description="Наличие сертификатов/корочек")
 
 
-class Candidateresult(BaseModel):
+class CandidateResult(BaseModel):
     """
     Финальный результат анализа кандидата.
 
