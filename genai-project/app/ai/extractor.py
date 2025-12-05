@@ -1,26 +1,44 @@
 import torch
 import json
+import logging
+from time import time
 from transformers import pipeline
 from lmformatenforcer import JsonSchemaParser
 from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
 from app.core.schemas import CandidateVector, CandidateSummary
+from colorama import init, Fore, Back, Style
+
+init(autoreset=True)
+logger = logging.getLogger("uvicorn")
 
 SYSTEM_PROMPT_EXTRACT = """
 Ты - HR-ассистент, помогающий с отбором кандидатов на работу.
 Твоя задача - анализировать резюме и сопроводительные письма,
-и на их основе составлять отчёт в формате json следующего вида:
-{schema}.
-""".format(schema=json.dumps(CandidateVector.model_json_schema(), indent=2, ensure_ascii=False))
+и на их основе составлять отчёт в формате json по модели CandidateSummary:
+```
+class ShiftPreference(IntEnum):
+    DAY_ONLY = 0    # Только дневные смены
+    NIGHT_ONLY = 1  # Только ночные смены
+    ANY = 2         # Готов работать в любое время
 
-SYSTEM_PROMPT_SUMMARY = """
-Ты - HR-ассистент, помогающий с отбором кандидатов на работу.
-Твоя задача - написать полное имя и краткое резюме кандидата
-в следующем json-формате:
-{schema}.
+class CandidateVector:
+    skills_verified_count: int
+    years_experience: float
+    commute_time_minutes: int
+    shift_preference: ShiftPreference 
+    salary_expectation: int
+    has_certifications: bool
+
+class CandidateSummary:
+    full_name: str    # ФИО кандидата
+    raw_summary: str  # Краткое резюме от LLM (<150 символов)
+    vector: CandidateVector
+```
 
 Если имя не указано, напиши "Не указано".
-Не добавливай ничего лишнего, пиши только по существу.
-""".format(schema=json.dumps(CandidateSummary.model_json_schema(), indent=2, ensure_ascii=False))
+Не добавляй ничего лишнего, соблюдай синтаксис JSON.
+Обязательно заканчивай структуру, чтобы она была валидным JSON-объектом.
+"""
 
 
 class extractor:
@@ -43,6 +61,7 @@ class extractor:
     
     """
     def __init__(self, model_name: str, *args, **kwargs):
+        logger.info(f"Initializing extractor with model {model_name}...")
         self._pipeline = pipeline(
             "text-generation",
             model=model_name,
@@ -51,28 +70,28 @@ class extractor:
             *args,
             **kwargs
         )
-        self._vec_parser = JsonSchemaParser(CandidateVector.model_json_schema())
-        self._vec_prefix_func = build_transformers_prefix_allowed_tokens_fn(self._pipeline.tokenizer, self._vec_parser)
         self._sum_parser = JsonSchemaParser(CandidateSummary.model_json_schema())
         self._sum_prefix_func = build_transformers_prefix_allowed_tokens_fn(self._pipeline.tokenizer, self._sum_parser)
+        logger.info(f"Extractor initialized.")
     
     def __call__(self, prompt, *args, **kwds):
-        vec_json_str = self._pipeline(
-            [[{"role": "system", "content": SYSTEM_PROMPT_EXTRACT}, {"role": "user", "content": prompt}]],
+        tm = time()
+        logger.info("Starting extraction process.")
+        sum_json_str = self._pipeline(
+            [[{"role": "system", "content": SYSTEM_PROMPT_EXTRACT}, {"role": "user", "content": prompt + ' /no_think'}]],
             *args,
-            prefix_allowed_tokens_fn=self._vec_prefix_func,
-            return_full_text=False,
-            **kwds
-            )[-1]
-        vec_json_str = str.strip(vec_json_str[0]['generated_text'], '\n ')
-        candidate_vector = CandidateVector.model_validate_json(vec_json_str)
-        summary_str = self._pipeline(
-            [[{"role": "system", "content": SYSTEM_PROMPT_SUMMARY}, {"role": "user", "content": prompt}]],
-            *args,
+            max_new_tokens=2048,
             prefix_allowed_tokens_fn=self._sum_prefix_func,
             return_full_text=False,
             **kwds
-            )[-1][0]['generated_text']
-        summary_str = str.strip(summary_str, '\n ')
-        candidate_summary = CandidateSummary.model_validate_json(summary_str)
-        return candidate_vector, candidate_summary.full_name, candidate_summary.raw_summary
+            )[-1]
+        sum_json_str = str.strip(sum_json_str[0]['generated_text'], '\n ')
+        logger.info("LLM output received.")
+        
+        try:
+            candidate_summary = CandidateSummary.model_validate_json(sum_json_str)
+            logger.info("LLM output successfully parsed as CandidateSummary JSON.")
+        except Exception as e:
+            logger.error("Error parsing LLM output as CandidateSummary JSON.")
+            raise e
+        return candidate_summary.full_name, candidate_summary.raw_summary, candidate_summary.vector

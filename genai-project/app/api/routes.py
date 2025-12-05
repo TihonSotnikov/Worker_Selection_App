@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Request
 from sqlmodel import Session
 from typing import List
 
@@ -17,6 +17,7 @@ router = APIRouter()
     summary="Анализ кандидата"
 )
 async def analyze_candidate(
+    request: Request,
     file: UploadFile = File(...),
     session: Session = Depends(get_session)
 ) -> CandidateResult:
@@ -50,7 +51,8 @@ async def analyze_candidate(
         Если произошла внутренняя ошибка сервера (ошибка записи файла, сбой БД, etc).
     """
     try:
-        result = await process_candidate(file, session)
+        model_ext = request.app.state.extractor
+        result = await process_candidate(file, session, model_ext)
         return result
 
     except Exception as e:
