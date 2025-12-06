@@ -36,8 +36,10 @@ class CandidateSummary:
 ```
 
 Если имя не указано, напиши "Не указано".
+Резюме "raw_summary" должно быть кратким!
+2-3 предложения, только важная информация.
+Строки текста пиши на русском языке.
 Не добавляй ничего лишнего, соблюдай синтаксис JSON.
-Обязательно заканчивай структуру, чтобы она была валидным JSON-объектом.
 """
 
 
@@ -82,16 +84,19 @@ class extractor:
             *args,
             max_new_tokens=2048,
             prefix_allowed_tokens_fn=self._sum_prefix_func,
+            repetition_penalty=1.15,
             return_full_text=False,
             **kwds
             )[-1]
         sum_json_str = str.strip(sum_json_str[0]['generated_text'], '\n ')
+        sum_json_str = sum_json_str.replace('\t', '  ').replace('\n', ' ')
         logger.info("LLM output received.")
         
         try:
             candidate_summary = CandidateSummary.model_validate_json(sum_json_str)
-            logger.info("LLM output successfully parsed as CandidateSummary JSON.")
+            inference_time = time() - tm
+            logger.info(f"LLM output successfully parsed as CandidateSummary JSON. (Took {inference_time:.1f} sec.)")
         except Exception as e:
-            logger.error("Error parsing LLM output as CandidateSummary JSON.")
+            logger.error(f"Error parsing LLM output as CandidateSummary JSON.\nString being parsed:\n{sum_json_str}")
             raise e
         return candidate_summary.full_name, candidate_summary.raw_summary, candidate_summary.vector
