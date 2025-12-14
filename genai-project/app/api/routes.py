@@ -52,7 +52,8 @@ async def analyze_candidate(
     """
     try:
         model_ext = request.app.state.extractor
-        result = await process_candidate(file, session, model_ext)
+        lock = request.app.state.gpu_lock
+        result = await process_candidate(file, session, model_ext, lock)
         return result
 
     except Exception as e:

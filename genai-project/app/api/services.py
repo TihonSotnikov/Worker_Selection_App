@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Tuple
 import uuid
@@ -50,13 +51,17 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
     return file_path
 
 
-async def ai_extract(file_path: Path, ext: extractor) -> Tuple[str, str, CandidateVector]:
+async def ai_extract(file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = None) -> Tuple[str, str, CandidateVector]:
     """AI экстракция данных из резюме."""
 
     with open(file_path, "r", encoding="utf-8") as f:
         resume_text = f.read()
 
-    name, summary, vector = await run_in_threadpool(ext, resume_text)
+    if gpu_lock:
+        async with gpu_lock:
+            name, summary, vector = await run_in_threadpool(ext, resume_text)
+    else:
+        name, summary, vector = await run_in_threadpool(ext, resume_text)
 
     return name, summary, vector
 
@@ -141,7 +146,8 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
 async def process_candidate(
     upload_file: UploadFile,
     session: Session,
-    model_ext: extractor
+    model_ext: extractor,
+    gpu_lock: asyncio.Lock = None
 ) -> CandidateResult:
     """
     Полный цикл обработки кандидата.
@@ -172,7 +178,7 @@ async def process_candidate(
 
     file_path = await save_upload_file(upload_file)
 
-    full_name, raw_summary, vector = await ai_extract(file_path, model_ext)
+    full_name, raw_summary, vector = await ai_extract(file_path, model_ext, gpu_lock)
 
     retention_score, risk_factors = await ml_predict(vector)
 

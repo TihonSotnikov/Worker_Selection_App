@@ -1,7 +1,12 @@
+import torch
 import uvicorn
+import gc
+import asyncio
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from accelerate import Accelerator
 
 from app.ai.extractor import extractor
 from app.api.database import init_db
@@ -19,12 +24,21 @@ async def lifespan(app: FastAPI):
     """
 
     print("Executing startup logic: initializing DB...")
+    app.state.logger = logging.getLogger("uvicorn")
     init_db()
-    app.state.extractor = extractor("Qwen/Qwen3-1.7B")
+    app.state.gpu_lock = asyncio.Lock()
+    async with app.state.gpu_lock:
+        app.state.extractor = extractor("Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger)
 
     yield
 
     print("Executing shutdown logic...")
+    async with app.state.gpu_lock:
+        if app.state.extractor:
+            app.state.logger.info("Releasing extractor resources...")
+            del app.state.extractor
+            gc.collect()
+            torch.cuda.empty_cache()
 
 
 app = FastAPI(
