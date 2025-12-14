@@ -1,13 +1,12 @@
 import torch
-import json
 import logging
 # import 
 from time import time
 from transformers import pipeline
 from lmformatenforcer import JsonSchemaParser
 from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
-from app.core.schemas import CandidateVector, CandidateSummary
-from colorama import init, Fore, Back, Style
+from app.core.schemas import CandidateSummary
+from colorama import init
 
 init(autoreset=True)
 

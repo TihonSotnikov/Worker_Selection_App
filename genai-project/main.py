@@ -6,12 +6,10 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from accelerate import Accelerator
 
 from app.ai.extractor import extractor
 from app.api.database import init_db
 from app.api.routes import router as api_router
-from app.core.config import settings
 
 
 @asynccontextmanager

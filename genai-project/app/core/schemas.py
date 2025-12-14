@@ -33,18 +33,17 @@ class CandidateVector(BaseModel):
     has_certifications: bool = Field(..., description="Наличие сертификатов/корочек")
 
 
-    # """
-    # Краткое резюме кандидата, сгенерированное LLM.
-
-    # Attributes
-    # ----------
-    # full_name : str
-    #     Полное имя кандидата.
-    # raw_summary : str
-    #     Краткое резюме, сгенерированное LLM.
-    # """
-
 class CandidateSummary(BaseModel):
+    """
+    Суммаризация от LLM модели.
+
+    Attributes
+    ----------
+    full_name : str
+        Полное имя кандидата.
+    raw_summary : str
+        Краткое резюме, сгенерированное LLM.
+    """
 
     full_name: str = Field(..., description="ФИО кандидата")
     raw_summary: str = Field(..., description="Краткое резюме, сгенерированное LLM")
@@ -55,7 +54,7 @@ class CandidateResult(BaseModel):
     """
     Финальный результат анализа кандидата.
 
-    Объединяет персональные данные, вектор признаков и результаты предсказания ML-модели.
+    Объединяет данные, сгенерированные LLM, вектор признаков и результаты предсказания ML-модели.
     Структура данных, которая возвращается на frontend.
 
     Attributes
