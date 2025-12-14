@@ -213,3 +213,4 @@ my_ТЗ.md
 *.sqlite3
 Worker_Selection_App
 .idea/
+catboost_info

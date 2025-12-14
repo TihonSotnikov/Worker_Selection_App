@@ -6,6 +6,7 @@ Synthetic Data Generator (Rule-Based)
 import pandas as pd
 import numpy as np
 import random
+import os
 from app.core.enums import ShiftPreference
 
 class SyntheticDataGenerator:
@@ -76,16 +77,14 @@ class SyntheticDataGenerator:
         print(f"Данные сохранены в {path}")
         return df
 
-    def generate_if_needed():
-        """Проверяет наличие датасета и генерирует если нужно"""
-        data_path = "data/train_dataset.csv"
-
-        if not os.path.exists(data_path) or os.path.getsize(data_path) == 0:
-            print("🔧 Генерация тренировочных данных...")
-            generator = SyntheticDataGenerator(n_samples=1000)
-            generator.save_to_csv(data_path)
-            print(f"✓ Сгенерировано 1000 записей в {data_path}")
-        else:
-            print(f"✓ Датасет уже существует: {data_path}")
-
-        return data_path
+def generate_if_needed():
+    """Проверяет наличие датасета и генерирует если нужно"""
+    data_path = "data/train_dataset.csv"
+    if not os.path.exists(data_path) or os.path.getsize(data_path) == 0:
+        print("Генерация тренировочных данных...")
+        generator = SyntheticDataGenerator(n_samples=1000)
+        generator.save_to_csv(data_path)
+        print(f"Сгенерировано 1000 записей в {data_path}")
+    else:
+        print(f"Датасет уже существует: {data_path}")
+    return data_path

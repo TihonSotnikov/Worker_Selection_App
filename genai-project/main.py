@@ -14,12 +14,22 @@ from app.ai.extractor import extractor
 from app.api.database import init_db
 from app.api.routes import router as api_router
 from app.ml.generator import generate_if_needed
+from app.ml.predictor import train_if_needed
 
 
 def start_dashboard():
-    """Запуск Streamlit дашборда в отдельном процессе"""
+    """
+    Запуск Streamlit дашборда в отдельном процессе
+    """
+
     try:
-        dashboard_path = os.path.join("app", "ui", "dashboard.py")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        dashboard_path = os.path.join(base_dir, "app", "ui", "dashboard.py")
+
+        if not os.path.exists(dashboard_path):
+            print(f"ERROR: Файл дашборда не найден по пути: {dashboard_path}")
+            return
 
         cmd = [
             sys.executable, "-m", "streamlit", "run",
@@ -48,15 +58,14 @@ async def lifespan(app: FastAPI):
     app.state.logger = logging.getLogger("uvicorn")
     init_db()
 
-    # Генерация датасета если нужно
     generate_if_needed()
-
-    # Запуск дашборда
-    start_dashboard()
+    train_if_needed()
 
     app.state.gpu_lock = asyncio.Lock()
     async with app.state.gpu_lock:
         app.state.extractor = extractor("Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger)
+
+    start_dashboard()
 
     yield
 

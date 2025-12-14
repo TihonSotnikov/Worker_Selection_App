@@ -12,9 +12,7 @@ from app.core.config import settings
 from app.core.schemas import CandidateVector, CandidateResult
 from app.core.enums import ShiftPreference
 from app.api.models_db import CandidateTable
-from app.ai.transcriber import transcriber
 from app.ai.extractor import extractor
-from app.ai.extractor import SYSTEM_PROMPT_EXTRACT
 
 
 async def save_upload_file(upload_file: UploadFile) -> Path:
@@ -64,27 +62,6 @@ async def ai_extract(file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = N
         name, summary, vector = await run_in_threadpool(ext, resume_text)
 
     return name, summary, vector
-
-
-# async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
-#     """Заглушка для модуля ML (предсказание удержания)."""
-#     score = 0.85
-#     risks = []
-#
-#     if vector.commute_time_minutes > 60:
-#         score -= 0.3
-#         risks.append("Долгая дорога до работы (>60 мин)")
-#
-#     if not vector.has_certifications:
-#         score -= 0.1
-#         risks.append("Отсутствуют сертификаты")
-#
-#     if vector.years_experience < 2.0:
-#         score -= 0.2
-#         risks.append("Недостаточный опыт (<2 лет)")
-#
-#     score = max(0.0, min(1.0, score))
-#     return score, risks
 
 
 async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
