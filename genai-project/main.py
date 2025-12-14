@@ -3,6 +3,9 @@ import uvicorn
 import gc
 import asyncio
 import logging
+import subprocess
+import sys
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -10,6 +13,26 @@ from contextlib import asynccontextmanager
 from app.ai.extractor import extractor
 from app.api.database import init_db
 from app.api.routes import router as api_router
+from app.ml.generator import generate_if_needed
+
+
+def start_dashboard():
+    """Запуск Streamlit дашборда в отдельном процессе"""
+    try:
+        dashboard_path = os.path.join("app", "ui", "dashboard.py")
+
+        cmd = [
+            sys.executable, "-m", "streamlit", "run",
+            dashboard_path,
+            "--server.port=8501",
+            "--server.address=0.0.0.0"
+        ]
+
+        subprocess.Popen(cmd)
+        print(" Dashboard started: http://localhost:8501")
+
+    except Exception as e:
+        print(f" Dashboard error: {e}")
 
 
 @asynccontextmanager
@@ -24,6 +47,13 @@ async def lifespan(app: FastAPI):
     print("Executing startup logic: initializing DB...")
     app.state.logger = logging.getLogger("uvicorn")
     init_db()
+
+    # Генерация датасета если нужно
+    generate_if_needed()
+
+    # Запуск дашборда
+    start_dashboard()
+
     app.state.gpu_lock = asyncio.Lock()
     async with app.state.gpu_lock:
         app.state.extractor = extractor("Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger)
