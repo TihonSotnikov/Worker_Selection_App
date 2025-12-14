@@ -1,16 +1,44 @@
 """
 Streamlit UI
-ТЗ:
-1. Дашборд рекрутера
-2. Кнопки-пресеты ("Загрузить идеального", "Загрузить проблемного") для демо
-3. Визуализация индикаторов риска
 """
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import sys
+import os
+
+# Добавляем путь для импортов
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from app.ml.predictor import RetentionPredictor
 from app.core.enums import ShiftPreference
+
+
+def init_dashboard():
+    """Инициализация дашборда - проверка наличия модели"""
+    # Проверяем наличие модели
+    model_path = "app/ml/model.pkl"
+
+    if not os.path.exists(model_path):
+        st.error(f" ML модель не найдена по пути: {model_path}")
+        st.info("Сначала запустите main.py для генерации данных и обучения модели")
+        return None
+
+    # Проверяем наличие данных
+    data_path = "data/train_dataset.csv"
+    if not os.path.exists(data_path):
+        st.error(f" Тренировочные данные не найдены: {data_path}")
+        return None
+
+    # Пытаемся загрузить модель
+    try:
+        predictor = RetentionPredictor()
+        predictor.load_model(model_path)
+        return predictor
+    except Exception as e:
+        st.error(f" Ошибка загрузки модели: {str(e)}")
+        return None
 
 
 def create_demo_vectors():
@@ -50,7 +78,7 @@ def main():
 
     # Загрузка модели
     try:
-        predictor.load_model("../data/model.pkl")
+        predictor.load_model("app/ml/model.pkl")
         st.success("Модель успешно загружена")
     except:
         st.warning("Модель не найдена. Сначала обучите модель.")
@@ -103,7 +131,7 @@ def main():
                 go.Indicator(
                     mode="gauge+number",
                     value=prediction['retention_probability'] * 100,
-                    title={'text': "Уровень риска"},
+                    title={'text': "Вероятность удержания"},
                     gauge={'axis': {'range': [0, 100]},
                            'bar': {'color': "darkblue"},
                            'steps': [

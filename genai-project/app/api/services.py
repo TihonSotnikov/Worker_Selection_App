@@ -66,81 +66,81 @@ async def ai_extract(file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = N
     return name, summary, vector
 
 
-async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
-    """Заглушка для модуля ML (предсказание удержания)."""
-    score = 0.85
-    risks = []
-
-    if vector.commute_time_minutes > 60:
-        score -= 0.3
-        risks.append("Долгая дорога до работы (>60 мин)")
-
-    if not vector.has_certifications:
-        score -= 0.1
-        risks.append("Отсутствуют сертификаты")
-
-    if vector.years_experience < 2.0:
-        score -= 0.2
-        risks.append("Недостаточный опыт (<2 лет)")
-
-    score = max(0.0, min(1.0, score))
-    return score, risks
-
-
 # async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
-#     """Вызов ML-модуля для предсказания удержания кандидата."""
-
-#     try:
-#         # Импорт и инициализация ML-модуля
-#         from app.ml.predictor import RetentionPredictor
-#         predictor = RetentionPredictor()
-
-#         # Загрузка или обучение модели
-#         try:
-#             predictor.load_model("app/ml/model.pkl")
-#         except FileNotFoundError:
-#             predictor.train_model()
-#             predictor.save_model("app/ml/model.pkl")
-
-#         # Преобразование данных для модели
-#         features = {
-#             'skills_verified_count': vector.skills_verified_count,
-#             'years_experience': vector.years_experience,
-#             'commute_time_minutes': vector.commute_time_minutes,
-#             'shift_preference': vector.shift_preference.value,
-#             'salary_expectation': vector.salary_expectation,
-#             'has_certifications': vector.has_certifications
-#         }
-
-#         # Выполнение предсказания
-#         prediction = predictor.predict_retention(features)
-#         risk_factors = predictor.explain_prediction(features)
-
-#         return float(prediction['retention_probability']), risk_factors
-
-#     except Exception as e:
-#         # Fallback на детерминированные правила при ошибке
-#         print(f"ML модуль недоступен: {e}")
-
-#         # Базовые правила из ТЗ
-#         score = 0.85
-#         risks = []
-
-#         if vector.commute_time_minutes > 60:
-#             score -= 0.3
-#             risks.append("Долгая дорога до работы (>60 мин)")
-
-#         if not vector.has_certifications:
-#             score -= 0.1
-#             risks.append("Отсутствуют сертификаты")
+#     """Заглушка для модуля ML (предсказание удержания)."""
+#     score = 0.85
+#     risks = []
+#
+#     if vector.commute_time_minutes > 60:
+#         score -= 0.3
+#         risks.append("Долгая дорога до работы (>60 мин)")
+#
+#     if not vector.has_certifications:
+#         score -= 0.1
+#         risks.append("Отсутствуют сертификаты")
+#
+#     if vector.years_experience < 2.0:
+#         score -= 0.2
+#         risks.append("Недостаточный опыт (<2 лет)")
+#
+#     score = max(0.0, min(1.0, score))
+#     return score, risks
 
 
-#         if vector.years_experience < 2.0:
-#             score -= 0.2
-#             risks.append("Недостаточный опыт (<2 лет)")
+async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
+    """Вызов ML-модуля для предсказания удержания кандидата."""
 
-#         score = max(0.0, min(1.0, score))
-#         return score, risks
+    try:
+        # Импорт и инициализация ML-модуля
+        from app.ml.predictor import RetentionPredictor
+        predictor = RetentionPredictor()
+
+        # Загрузка или обучение модели
+        try:
+            predictor.load_model("app/ml/model.pkl")
+        except FileNotFoundError:
+            predictor.train_model()
+            predictor.save_model("app/ml/model.pkl")
+
+        # Преобразование данных для модели
+        features = {
+            'skills_verified_count': vector.skills_verified_count,
+            'years_experience': vector.years_experience,
+            'commute_time_minutes': vector.commute_time_minutes,
+            'shift_preference': vector.shift_preference.value,
+            'salary_expectation': vector.salary_expectation,
+            'has_certifications': vector.has_certifications
+        }
+
+        # Выполнение предсказания
+        prediction = predictor.predict_retention(features)
+        risk_factors = predictor.explain_prediction(features)
+
+        return float(prediction['retention_probability']), risk_factors
+
+    except Exception as e:
+        # Fallback на детерминированные правила при ошибке
+        print(f"ML модуль недоступен: {e}")
+
+        # Базовые правила из ТЗ
+        score = 0.85
+        risks = []
+
+        if vector.commute_time_minutes > 60:
+            score -= 0.3
+            risks.append("Долгая дорога до работы (>60 мин)")
+
+        if not vector.has_certifications:
+            score -= 0.1
+            risks.append("Отсутствуют сертификаты")
+
+
+        if vector.years_experience < 2.0:
+            score -= 0.2
+            risks.append("Недостаточный опыт (<2 лет)")
+
+        score = max(0.0, min(1.0, score))
+        return score, risks
 
 
 async def process_candidate(

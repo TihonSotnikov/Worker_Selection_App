@@ -19,7 +19,7 @@ class RetentionPredictor:
         self.model = None
         self.feature_names = None
 
-    def train_model(self, data_path="../data/train_dataset.csv"):
+    def train_model(self, data_path="data/train_dataset.csv"):
         """Обучение CatBoost модели"""
         # Загрузка сгенерированных данных
         df = pd.read_csv(data_path)
@@ -112,7 +112,7 @@ class RetentionPredictor:
         # Возвращаем топ-3 фактора риска
         return risk_factors[:3]
 
-    def save_model(self, path="../data/model.pkl"):
+    def save_model(self, path="app/ml/model.pkl"):
         """Сохранение обученной модели"""
         with open(path, 'wb') as f:
             pickle.dump({
@@ -120,7 +120,7 @@ class RetentionPredictor:
                 'feature_names': self.feature_names
             }, f)
 
-    def load_model(self, path="../data/model.pkl"):
+    def load_model(self, path="app/ml/model.pkl"):
         """Загрузка обученной модели"""
         with open(path, 'rb') as f:
             data = pickle.load(f)
