@@ -78,7 +78,7 @@ def main():
 
     # Загрузка модели
     try:
-        predictor.load_model("app/ml/model.pkl")
+        predictor.load_model("genai-project/app/ml/model.pkl")
         st.success("Модель успешно загружена")
     except:
         st.warning("Модель не найдена. Сначала обучите модель.")
