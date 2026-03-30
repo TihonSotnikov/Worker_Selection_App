@@ -144,7 +144,7 @@ genai-project/
 |------|-----|----------------------|
 | **🤖 AI Engineer** | Андрей Червов | STT, Qwen integration, Prompt Engineering |
 | **🏗️ System Architect** | Тихон Сотников | FastAPI, Architecture, DevOps |
-| **🧪 ML Engineer & UI** | Арсений Сизов | CatBoost, Synthetic Data, Streamlit UI |
+| **🧪 ML Engineer & UI** | Илья Степанов | CatBoost, Synthetic Data, Streamlit UI |
 
 ---
 
