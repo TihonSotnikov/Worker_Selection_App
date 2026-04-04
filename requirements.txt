@@ -2,8 +2,7 @@ fastapi
 httpx
 lm-format-enforcer
 pytest
-torch
-transformers
+transformers[torch]
 uvicorn
 colorama
 python-multipart
