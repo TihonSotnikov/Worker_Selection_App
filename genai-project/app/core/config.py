@@ -1,4 +1,5 @@
 import os
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -25,12 +26,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "not-set"
     DATABASE_URL: str = "sqlite:///./Worker_Selection_App.db"
     UPLOAD_DIR: str = "/tmp/Worker_Selection_App_uploads"
-    UPLOAD_DIR: str = "Worker_Selection_App"
 
-    class Config:
-        """Конфигурация Pydantic."""
-
-        env_file = ".env"
+    model_config = ConfigDict(env_file=".env")
 
 
 # Создаётся единственный экземпляр, который импортируется по всему приложению.

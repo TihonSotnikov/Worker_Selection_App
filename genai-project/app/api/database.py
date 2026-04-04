@@ -1,6 +1,7 @@
 from typing import Generator
 from sqlmodel import SQLModel, Session, create_engine
 from app.core.config import settings
+from app.api.models_db import CandidateTable
 
 # check_same_thread=False необходим для SQLite при работе с FastAPI,
 # так как каждый запрос обрабатывается в отдельном потоке.

@@ -10,11 +10,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.ai.extractor import extractor
+TESTING = os.getenv("TESTING", "0") == "1"
+
 from app.api.database import init_db
 from app.api.routes import router as api_router
-from app.ml.generator import generate_if_needed
-from app.ml.predictor import train_if_needed
+from app.ml_legacy.generator import generate_if_needed
+from app.ml_legacy.predictor import train_if_needed
+from app.core.config import settings
+
+if not TESTING:
+    from app.ai.extractor import extractor
 
 
 def start_dashboard():
@@ -25,7 +30,7 @@ def start_dashboard():
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
-        dashboard_path = os.path.join(base_dir, "app", "ui", "dashboard.py")
+        dashboard_path = os.path.join(base_dir, "app", "ui_legacy", "dashboard.py")
 
         if not os.path.exists(dashboard_path):
             print(f"ERROR: Файл дашборда не найден по пути: {dashboard_path}")
@@ -54,10 +59,16 @@ async def lifespan(app: FastAPI):
     Менеджер жизненного цикла приложения.
 
     Код до yield выполняется при старте сервера.
-    Код после yield выполняется при сотановки сервера.
+    Код после yield выполняется при остановки сервера.
     """
 
-    print("Executing startup logic: initializing DB...")
+    print("Executing startup logic...")
+
+    if not os.path.exists(settings.UPLOAD_DIR):
+        print(f"Creating upload directory: {settings.UPLOAD_DIR}")
+        os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+
+    print("Initializing DB...")
     app.state.logger = logging.getLogger("uvicorn")
     init_db()
 
@@ -65,12 +76,15 @@ async def lifespan(app: FastAPI):
     train_if_needed()
 
     app.state.gpu_lock = asyncio.Lock()
-    async with app.state.gpu_lock:
-        app.state.extractor = extractor(
-            "Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger
-        )
+    if TESTING:
+        app.state.extractor = object()
+    else:
+        async with app.state.gpu_lock:
+            app.state.extractor = extractor(
+                "Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger
+            )
 
-    start_dashboard()
+        start_dashboard()
 
     yield
 

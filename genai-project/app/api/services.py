@@ -4,15 +4,16 @@ from typing import Tuple
 import uuid
 import json
 
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.schemas import CandidateVector, CandidateResult
 from app.core.enums import ShiftPreference
 from app.api.models_db import CandidateTable
 from app.ai.extractor import extractor
+from app.ai.transcriber import transcriber
 
 
 async def save_upload_file(upload_file: UploadFile) -> Path:
@@ -54,8 +55,20 @@ async def ai_extract(
 ) -> Tuple[str, str, CandidateVector]:
     """AI экстракция данных из резюме."""
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        resume_text = f.read()
+    extension = file_path.suffix.lower()
+
+    if extension in [".wav", ".mp3"]:
+        try:
+            stt_model = transcriber("medium")
+            segments, info = stt_model(str(file_path))
+            resume_text = " ".join([segment.text for segment in segments])
+        except Exception:
+            raise HTTPException(
+                status_code=400, detail="Ошибка при обработке аудиофайла"
+            )
+    else:
+        with open(file_path, "r", encoding="utf-8") as f:
+            resume_text = f.read()
 
     if gpu_lock:
         async with gpu_lock:
@@ -70,19 +83,15 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
     """Вызов ML-модуля для предсказания удержания кандидата."""
 
     try:
-        # Импорт и инициализация ML-модуля
-        from app.ml.predictor import RetentionPredictor
+        from app.ml_legacy.predictor import RetentionPredictor
 
         predictor = RetentionPredictor()
+        predictor.load_model()
 
-        # Загрузка или обучение модели
-        try:
-            predictor.load_model("app/ml/model.pkl")
-        except FileNotFoundError:
+        if predictor.model is None:
             predictor.train_model()
-            predictor.save_model("app/ml/model.pkl")
+            predictor.save_model()
 
-        # Преобразование данных для модели
         features = {
             "skills_verified_count": vector.skills_verified_count,
             "years_experience": vector.years_experience,
@@ -92,17 +101,14 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
             "has_certifications": vector.has_certifications,
         }
 
-        # Выполнение предсказания
         prediction = predictor.predict_retention(features)
         risk_factors = predictor.explain_prediction(features)
 
         return float(prediction["retention_probability"]), risk_factors
 
     except Exception as e:
-        # Fallback на детерминированные правила при ошибке
         print(f"ML модуль недоступен: {e}")
 
-        # Базовые правила из ТЗ
         score = 0.85
         risks = []
 
@@ -203,12 +209,14 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
 
     Returns
     -------
-    List[CandidateResult]
+    list[CandidateResult]
         Список всех кандидатов, отсортированных по дате (новые первые).
     """
 
     candidates = (
-        session.query(CandidateTable).order_by(CandidateTable.created_at.desc()).all()
+        session.exec(
+            select(CandidateTable).order_by(CandidateTable.created_at.desc())
+        ).all()
     )
 
     results = []
