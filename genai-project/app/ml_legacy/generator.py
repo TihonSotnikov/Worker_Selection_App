@@ -3,11 +3,13 @@ Synthetic Data Generator (Rule-Based)
 ТЗ: Скрипт генерации train.csv (1000 строк) с жесткими правилами
 Пример правила: Если Commute > 90 мин, то Retention = 0
 """
+
 import pandas as pd
 import numpy as np
 import random
 import os
 from app.core.enums import ShiftPreference
+
 
 class SyntheticDataGenerator:
     def __init__(self, n_samples=1000):
@@ -70,12 +72,14 @@ class SyntheticDataGenerator:
     def save_to_csv(self, path="data/train_dataset.csv"):
         """Сохранение в CSV файл"""
         import os
+
         os.makedirs(os.path.dirname(path), exist_ok=True)
 
         df = self.generate_dataset()
         df.to_csv(path, index=False)
         print(f"Данные сохранены в {path}")
         return df
+
 
 def generate_if_needed():
     """Проверяет наличие датасета и генерирует если нужно"""

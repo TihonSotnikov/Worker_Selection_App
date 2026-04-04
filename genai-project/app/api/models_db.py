@@ -48,7 +48,7 @@ class CandidateTable(SQLModel, table=True):
         default_factory=lambda: str(uuid.uuid4()),
         primary_key=True,
         index=True,
-        nullable=False
+        nullable=False,
     )
     created_at: datetime = Field(default_factory=datetime.utcnow)
     full_name: str

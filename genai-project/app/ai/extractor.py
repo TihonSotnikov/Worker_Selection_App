@@ -1,10 +1,13 @@
 import torch
 import logging
-# import 
+
+# import
 from time import time
 from transformers import pipeline
 from lmformatenforcer import JsonSchemaParser
-from lmformatenforcer.integrations.transformers import build_transformers_prefix_allowed_tokens_fn
+from lmformatenforcer.integrations.transformers import (
+    build_transformers_prefix_allowed_tokens_fn,
+)
 from app.core.schemas import CandidateSummary
 from colorama import init
 
@@ -54,13 +57,14 @@ class extractor:
         Парсер для обеспечения соответствия вывода заданной JSON-схеме.
     _prefix_func : callable
         Функция для ограничения токенов вывода в соответствии с JSON-схемой.
-    
+
     Methods
     -------
     __call__(prompt, *args, **kwds)
         Вызывает модель трансформера с ограничением вывода по схеме.
-    
+
     """
+
     def __init__(self, model_name: str, logger: logging.Logger = None, *args, **kwargs):
         if logger:
             logger.info(f"Initializing extractor with model {model_name}...")
@@ -70,42 +74,57 @@ class extractor:
             device_map="auto",
             dtype="auto",
             *args,
-            **kwargs
+            **kwargs,
         )
         self._sum_parser = JsonSchemaParser(CandidateSummary.model_json_schema())
-        self._sum_prefix_func = build_transformers_prefix_allowed_tokens_fn(self._pipeline.tokenizer, self._sum_parser)
+        self._sum_prefix_func = build_transformers_prefix_allowed_tokens_fn(
+            self._pipeline.tokenizer, self._sum_parser
+        )
         if logger:
             logger.info(f"Extractor initialized.")
         self._logger = logger
-    
+
     def __call__(self, prompt, *args, **kwds):
         tm = time()
         if self._logger:
             self._logger.info("Starting extraction process.")
         sum_json_str = self._pipeline(
-            [[{"role": "system", "content": SYSTEM_PROMPT_EXTRACT}, {"role": "user", "content": prompt + ' /no_think'}]],
+            [
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT_EXTRACT},
+                    {"role": "user", "content": prompt + " /no_think"},
+                ]
+            ],
             *args,
             max_new_tokens=2048,
             prefix_allowed_tokens_fn=self._sum_prefix_func,
             repetition_penalty=1.15,
             return_full_text=False,
-            **kwds
-            )[-1]
-        sum_json_str = str.strip(sum_json_str[0]['generated_text'], '\n ')
-        sum_json_str = sum_json_str.replace('\t', '  ').replace('\n', ' ')
+            **kwds,
+        )[-1]
+        sum_json_str = str.strip(sum_json_str[0]["generated_text"], "\n ")
+        sum_json_str = sum_json_str.replace("\t", "  ").replace("\n", " ")
         if self._logger:
             self._logger.info("LLM output received.")
-        
+
         try:
             candidate_summary = CandidateSummary.model_validate_json(sum_json_str)
             inference_time = time() - tm
             if self._logger:
-                self._logger.info(f"LLM output successfully parsed as CandidateSummary JSON. (Took {inference_time:.1f} sec.)")
+                self._logger.info(
+                    f"LLM output successfully parsed as CandidateSummary JSON. (Took {inference_time:.1f} sec.)"
+                )
         except Exception as e:
             if self._logger:
-                self._logger.error(f"Error parsing LLM output as CandidateSummary JSON.\nString being parsed:\n{sum_json_str}")
+                self._logger.error(
+                    f"Error parsing LLM output as CandidateSummary JSON.\nString being parsed:\n{sum_json_str}"
+                )
             raise e
-        return candidate_summary.full_name, candidate_summary.raw_summary, candidate_summary.vector
+        return (
+            candidate_summary.full_name,
+            candidate_summary.raw_summary,
+            candidate_summary.vector,
+        )
 
 
 def get_vram_info(device_name: str):
@@ -121,7 +140,7 @@ def get_vram_info(device_name: str):
         return 0, 0
     device = torch.device(device_name)
     props = torch.cuda.get_device_properties(device)
-    total_vram = props.total_memory / (1024 ** 3)
+    total_vram = props.total_memory / (1024**3)
     free_vram, _ = torch.cuda.mem_get_info(device)
-    free_vram = free_vram / (1024 ** 3)
+    free_vram = free_vram / (1024**3)
     return total_vram, free_vram

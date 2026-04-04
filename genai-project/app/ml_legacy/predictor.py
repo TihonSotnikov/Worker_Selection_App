@@ -1,9 +1,10 @@
 """
 ML Model & Interpretability
-ТЗ: 
+ТЗ:
 1. Обучить CatBoostClassifier / RandomForest
 2. Реализовать функцию explain_prediction(vector), возвращающую топ-факторы риска
 """
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -26,23 +27,23 @@ class RetentionPredictor:
         self.feature_names = None
 
     def train_model(self, data_path=DEFAULT_DATA_PATH):
-        
+
         if not os.path.exists(data_path):
-             raise FileNotFoundError(f"Dataset not found at: {data_path}")
+            raise FileNotFoundError(f"Dataset not found at: {data_path}")
 
         df = pd.read_csv(data_path)
 
         feature_cols = [
-            'skills_verified_count',
-            'years_experience',
-            'commute_time_minutes',
-            'shift_preference',
-            'salary_expectation',
-            'has_certifications'
+            "skills_verified_count",
+            "years_experience",
+            "commute_time_minutes",
+            "shift_preference",
+            "salary_expectation",
+            "has_certifications",
         ]
 
         X = df[feature_cols]
-        y = df['retention']
+        y = df["retention"]
 
         self.feature_names = feature_cols
 
@@ -54,9 +55,9 @@ class RetentionPredictor:
             iterations=500,
             depth=6,
             learning_rate=0.1,
-            loss_function='Logloss',
+            loss_function="Logloss",
             verbose=False,
-            random_state=42
+            random_state=42,
         )
 
         self.model.fit(X_train, y_train, eval_set=(X_test, y_test))
@@ -74,7 +75,7 @@ class RetentionPredictor:
 
     def predict_retention(self, features: Dict):
         if not self.model:
-             raise ValueError("Model is not loaded or trained.")
+            raise ValueError("Model is not loaded or trained.")
 
         feature_df = pd.DataFrame([features])[self.feature_names]
 
@@ -82,38 +83,37 @@ class RetentionPredictor:
 
         return {
             "retention_probability": float(retention_prob),
-            "will_stay": retention_prob > 0.5
+            "will_stay": retention_prob > 0.5,
         }
 
     def explain_prediction(self, features: Dict) -> List[str]:
         risk_factors = []
 
-        if features.get('commute_time_minutes', 0) > 90:
+        if features.get("commute_time_minutes", 0) > 90:
             risk_factors.append("Дорога на работу занимает больше 90 минут")
 
-        if features.get('skills_verified_count', 0) < 3:
+        if features.get("skills_verified_count", 0) < 3:
             risk_factors.append("Мало проверенных навыков (меньше 3)")
 
-        if (features.get('shift_preference') == ShiftPreference.NIGHT_ONLY.value):
+        if features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value:
             risk_factors.append("Предпочтение ночной смены")
 
-        if (features.get('years_experience', 0) < 2 and
-                features.get('salary_expectation', 0) > 100000):
+        if (
+            features.get("years_experience", 0) < 2
+            and features.get("salary_expectation", 0) > 100000
+        ):
             risk_factors.append("Мало опыта при высокой зарплатной ожидании")
 
-        if not features.get('has_certifications', False):
+        if not features.get("has_certifications", False):
             risk_factors.append("Отсутствие подтверждающих сертификатов")
 
         return risk_factors[:3]
 
     def save_model(self, path=DEFAULT_MODEL_PATH):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        
-        with open(path, 'wb') as f:
-            pickle.dump({
-                'model': self.model,
-                'feature_names': self.feature_names
-            }, f)
+
+        with open(path, "wb") as f:
+            pickle.dump({"model": self.model, "feature_names": self.feature_names}, f)
         print(f"Model saved explicitly to: {path}")
 
     def load_model(self, path=DEFAULT_MODEL_PATH):
@@ -121,11 +121,11 @@ class RetentionPredictor:
         if not os.path.exists(path):
             print(f"Model file not found at {path}")
             return
-            
-        with open(path, 'rb') as f:
+
+        with open(path, "rb") as f:
             data = pickle.load(f)
-            self.model = data['model']
-            self.feature_names = data['feature_names']
+            self.model = data["model"]
+            self.feature_names = data["feature_names"]
 
 
 def train_if_needed():
@@ -136,7 +136,7 @@ def train_if_needed():
     if not os.path.exists(data_path) or os.path.getsize(data_path) == 0:
         print("Training model...")
         model = RetentionPredictor()
-        model.train_model() 
+        model.train_model()
         model.save_model(data_path)
         print("Model is trained and saved.")
     else:

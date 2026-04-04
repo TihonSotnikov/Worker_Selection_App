@@ -14,12 +14,12 @@ router = APIRouter()
     "/analyze",
     response_model=CandidateResult,
     status_code=status.HTTP_201_CREATED,
-    summary="Анализ кандидата"
+    summary="Анализ кандидата",
 )
 async def analyze_candidate(
     request: Request,
     file: UploadFile = File(...),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
 ) -> CandidateResult:
     """
     Эндпоинт для обработки резюме/интервью кандидата.
@@ -63,18 +63,14 @@ async def analyze_candidate(
         print(f"Error processing candidate: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Internal Server Error: {str(e)}"
+            detail=f"Internal Server Error: {str(e)}",
         )
 
 
 @router.get(
-    "/history",
-    response_model=List[CandidateResult],
-    summary="История анализов"
+    "/history", response_model=List[CandidateResult], summary="История анализов"
 )
-def get_history(
-    session: Session = Depends(get_session)
-) -> List[CandidateResult]:
+def get_history(session: Session = Depends(get_session)) -> List[CandidateResult]:
     """
     Эндпоинт для выгрузки списка всех ранее проанализированных кандидатов.
 
@@ -101,5 +97,5 @@ def get_history(
         print(f"Error fetching history: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not fetch history"
+            detail="Could not fetch history",
         )

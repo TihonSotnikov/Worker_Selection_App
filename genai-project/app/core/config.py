@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     class Config:
         """Конфигурация Pydantic."""
+
         env_file = ".env"
 
 

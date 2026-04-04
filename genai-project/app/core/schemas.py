@@ -25,9 +25,13 @@ class CandidateVector(BaseModel):
         Наличие сертификатов/корочек.
     """
 
-    skills_verified_count: int = Field(..., ge=0, description="Количество подтвержденных навыков")
+    skills_verified_count: int = Field(
+        ..., ge=0, description="Количество подтвержденных навыков"
+    )
     years_experience: float = Field(..., ge=0.0, description="Опыт работы в годах")
-    commute_time_minutes: int = Field(..., ge=0, description="Время пути до работы в минутах")
+    commute_time_minutes: int = Field(
+        ..., ge=0, description="Время пути до работы в минутах"
+    )
     shift_preference: ShiftPreference = Field(..., description="Предпочитаемый график")
     salary_expectation: int = Field(..., ge=0, description="Ожидаемая зарплата")
     has_certifications: bool = Field(..., description="Наличие сертификатов/корочек")
@@ -79,5 +83,9 @@ class CandidateResult(BaseModel):
 
     vector: CandidateVector
 
-    retention_score: float = Field(..., ge=0.0, le=1.0, description="Вероятность удержания [0.0 — 1.0]")
-    risk_factors: List[str] = Field(default_factory=list, description="Список текстовых пояснений рисков")
+    retention_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Вероятность удержания [0.0 — 1.0]"
+    )
+    risk_factors: List[str] = Field(
+        default_factory=list, description="Список текстовых пояснений рисков"
+    )

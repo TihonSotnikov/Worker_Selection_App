@@ -49,7 +49,9 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
     return file_path
 
 
-async def ai_extract(file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = None) -> Tuple[str, str, CandidateVector]:
+async def ai_extract(
+    file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = None
+) -> Tuple[str, str, CandidateVector]:
     """AI экстракция данных из резюме."""
 
     with open(file_path, "r", encoding="utf-8") as f:
@@ -70,6 +72,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
     try:
         # Импорт и инициализация ML-модуля
         from app.ml.predictor import RetentionPredictor
+
         predictor = RetentionPredictor()
 
         # Загрузка или обучение модели
@@ -81,19 +84,19 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
 
         # Преобразование данных для модели
         features = {
-            'skills_verified_count': vector.skills_verified_count,
-            'years_experience': vector.years_experience,
-            'commute_time_minutes': vector.commute_time_minutes,
-            'shift_preference': vector.shift_preference.value,
-            'salary_expectation': vector.salary_expectation,
-            'has_certifications': vector.has_certifications
+            "skills_verified_count": vector.skills_verified_count,
+            "years_experience": vector.years_experience,
+            "commute_time_minutes": vector.commute_time_minutes,
+            "shift_preference": vector.shift_preference.value,
+            "salary_expectation": vector.salary_expectation,
+            "has_certifications": vector.has_certifications,
         }
 
         # Выполнение предсказания
         prediction = predictor.predict_retention(features)
         risk_factors = predictor.explain_prediction(features)
 
-        return float(prediction['retention_probability']), risk_factors
+        return float(prediction["retention_probability"]), risk_factors
 
     except Exception as e:
         # Fallback на детерминированные правила при ошибке
@@ -111,7 +114,6 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
             score -= 0.1
             risks.append("Отсутствуют сертификаты")
 
-
         if vector.years_experience < 2.0:
             score -= 0.2
             risks.append("Недостаточный опыт (<2 лет)")
@@ -124,7 +126,7 @@ async def process_candidate(
     upload_file: UploadFile,
     session: Session,
     model_ext: extractor,
-    gpu_lock: asyncio.Lock = None
+    gpu_lock: asyncio.Lock = None,
 ) -> CandidateResult:
     """
     Полный цикл обработки кандидата.
@@ -169,7 +171,7 @@ async def process_candidate(
         vec_commute_minutes=vector.commute_time_minutes,
         vec_shift_preference=int(vector.shift_preference),
         vec_salary_expectation=vector.salary_expectation,
-        vec_has_certifications=vector.has_certifications
+        vec_has_certifications=vector.has_certifications,
     )
 
     session.add(db_candidate)
@@ -182,7 +184,7 @@ async def process_candidate(
         raw_summary=db_candidate.raw_summary,
         vector=vector,
         retention_score=db_candidate.retention_score,
-        risk_factors=json.loads(db_candidate.risk_factors)
+        risk_factors=json.loads(db_candidate.risk_factors),
     )
 
     return result
@@ -205,9 +207,9 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
         Список всех кандидатов, отсортированных по дате (новые первые).
     """
 
-    candidates = session.query(CandidateTable).order_by(
-        CandidateTable.created_at.desc()
-    ).all()
+    candidates = (
+        session.query(CandidateTable).order_by(CandidateTable.created_at.desc()).all()
+    )
 
     results = []
     for db_candidate in candidates:
@@ -217,7 +219,7 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
             commute_time_minutes=db_candidate.vec_commute_minutes,
             shift_preference=ShiftPreference(db_candidate.vec_shift_preference),
             salary_expectation=db_candidate.vec_salary_expectation,
-            has_certifications=db_candidate.vec_has_certifications
+            has_certifications=db_candidate.vec_has_certifications,
         )
 
         result = CandidateResult(
@@ -226,7 +228,7 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
             raw_summary=db_candidate.raw_summary,
             vector=vector,
             retention_score=db_candidate.retention_score,
-            risk_factors=json.loads(db_candidate.risk_factors)
+            risk_factors=json.loads(db_candidate.risk_factors),
         )
         results.append(result)
 
