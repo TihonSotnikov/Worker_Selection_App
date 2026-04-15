@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 import uuid
 
@@ -50,7 +50,7 @@ class CandidateTable(SQLModel, table=True):
         index=True,
         nullable=False,
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     full_name: str
     raw_summary: str
     retention_score: float
