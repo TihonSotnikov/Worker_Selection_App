@@ -14,8 +14,9 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))
 DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "train_dataset.csv")
 
 class SyntheticDataGenerator:
-    def __init__(self, n_samples=1000):
+    def __init__(self, n_samples=1000, seed=42):
         self.n_samples = n_samples
+        self.rng = random.Random(seed)
 
     def generate_dataset(self):
         """Генерация датасета с жесткими правилами для удержания"""
@@ -23,12 +24,12 @@ class SyntheticDataGenerator:
 
         for i in range(self.n_samples):
             # Генерация признаков для ML модели
-            skills_verified_count = random.randint(0, 10)
-            years_experience = random.uniform(0, 30)
-            commute_time_minutes = random.randint(10, 180)
-            shift_preference = random.choice(list(ShiftPreference))
-            salary_expectation = random.randint(30000, 150000)
-            has_certifications = random.random() > 0.7
+            skills_verified_count = self.rng.randint(0, 10)
+            years_experience = self.rng.uniform(0, 30)
+            commute_time_minutes = self.rng.randint(10, 180)
+            shift_preference = self.rng.choice(list(ShiftPreference))
+            salary_expectation = self.rng.randint(30000, 150000)
+            has_certifications = self.rng.random() > 0.7
             age = random.randint(20, 60)  # Для дополнительных правил
 
             # Бинарная целевая переменная: 1 - останется, 0 - уволится
@@ -61,6 +62,7 @@ class SyntheticDataGenerator:
             record = {
                 "skills_verified_count": skills_verified_count,
                 "years_experience": round(years_experience, 1),
+                "age": age,
                 "commute_time_minutes": commute_time_minutes,
                 "shift_preference": shift_preference.value,
                 "salary_expectation": salary_expectation,
@@ -70,8 +72,8 @@ class SyntheticDataGenerator:
             data.append(record)
 
         return pd.DataFrame(data)
-
-    def save_to_csv(self, path="DEFAULT_DATA_PATH"):
+    
+    def save_to_csv(self, path=DEFAULT_DATA_PATH):
         """Сохранение в CSV файл"""
         import os
 
