@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Any
 import uuid
 import json
 
@@ -56,6 +56,8 @@ async def ai_extract(
 
     if extension in [".wav", ".mp3"]:
         try:
+            from app.ai.transcriber import transcriber
+            
             stt_model = transcriber("medium")
             segments, info = stt_model(str(file_path))
             resume_text = " ".join([segment.text for segment in segments])
