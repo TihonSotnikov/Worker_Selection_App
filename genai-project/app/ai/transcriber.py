@@ -1,6 +1,5 @@
 import torch
-import numpy as np
-from transformers import pipeline
+#УБРАЛ ЛИШНИЕ ИМПОРТЫ
 from faster_whisper import WhisperModel
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
