@@ -12,9 +12,6 @@ from app.core.config import settings
 from app.core.schemas import CandidateVector, CandidateResult
 from app.core.enums import ShiftPreference
 from app.api.models_db import CandidateTable
-from app.ai.extractor import extractor
-from app.ai.transcriber import transcriber
-
 
 async def save_upload_file(upload_file: UploadFile) -> Path:
     """
@@ -51,7 +48,7 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
 
 
 async def ai_extract(
-    file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = None
+    file_path: Path, ext: Any, gpu_lock: asyncio.Lock = None   #ВМЕСТО ext: extractor СТОИТ ext: Any
 ) -> Tuple[str, str, CandidateVector]:
     """AI экстракция данных из резюме."""
 
@@ -83,7 +80,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
     """Вызов ML-модуля для предсказания удержания кандидата."""
 
     try:
-        from app.ml_legacy.predictor import RetentionPredictor
+        from app.ml_legacy.predictor import RetentionPredictor   #ВЫЗОВ ИМПОРТА ПО НЕОБХОДИМОСТИ
 
         predictor = RetentionPredictor()
         predictor.load_model()
@@ -131,7 +128,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
 async def process_candidate(
     upload_file: UploadFile,
     session: Session,
-    model_ext: extractor,
+    model_ext: Any,  #ВМЕСТО model_ext: extractor СТОИТ model_ext: Any
     gpu_lock: asyncio.Lock = None,
 ) -> CandidateResult:
     """
