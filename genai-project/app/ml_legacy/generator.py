@@ -5,11 +5,13 @@ Synthetic Data Generator (Rule-Based)
 """
 
 import pandas as pd
-import numpy as np
 import random
 import os
 from app.core.enums import ShiftPreference
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))
+DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "train_dataset.csv")
 
 class SyntheticDataGenerator:
     def __init__(self, n_samples=1000):
@@ -69,7 +71,7 @@ class SyntheticDataGenerator:
 
         return pd.DataFrame(data)
 
-    def save_to_csv(self, path="data/train_dataset.csv"):
+    def save_to_csv(self, path="DEFAULT_DATA_PATH"):
         """Сохранение в CSV файл"""
         import os
 
@@ -83,7 +85,7 @@ class SyntheticDataGenerator:
 
 def generate_if_needed():
     """Проверяет наличие датасета и генерирует если нужно"""
-    data_path = "data/train_dataset.csv"
+    data_path = DEFAULT_DATA_PATH
     if not os.path.exists(data_path) or os.path.getsize(data_path) == 0:
         print("Генерация тренировочных данных...")
         generator = SyntheticDataGenerator(n_samples=1000)
