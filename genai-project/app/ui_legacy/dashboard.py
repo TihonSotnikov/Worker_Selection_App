@@ -4,7 +4,7 @@ Streamlit UI
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+#УДАЛИЛ НЕИСПОЛЬЗУЕМЫЙ ИМПОРТ
 import plotly.graph_objects as go
 import sys
 import os
@@ -12,14 +12,16 @@ import os
 # Добавляем путь для импортов
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from app.ml.predictor import RetentionPredictor
+from app.ml_legacy.predictor import RetentionPredictor    #ПОМЕНЯЛ НАЗВАНИЕ ПАПКИ
 from app.core.enums import ShiftPreference
 
 
 def init_dashboard():
-    """Инициализация дашборда - проверка наличия модели"""
-    # Проверяем наличие модели
-    model_path = "app/ml/model.pkl"
+    """Инициализация дашборда: проверка наличия модели и датасета, загрузка модели."""
+    base_dir = Path(__file__).resolve().parents[2]              #
+                                                                #
+    model_path = base_dir / "app" / "ml_legacy" / "model.pkl"   #ИСПРАВИЛ ПУТЬ К МОДЕЛИ И СДЕЛАЛ БОЛЕЕ-МЕНЕЕ УНИВЕРСАЛЬНЫМ
+    data_path = base_dir / "data" / "train_dataset.csv"         #
 
     if not os.path.exists(model_path):
         st.error(f" ML модель не найдена по пути: {model_path}")
@@ -75,7 +77,7 @@ def main():
     st.title("Система прогнозирования удержания персонала")
 
     # Инициализация предсказателя
-    predictor = RetentionPredictor()
+    predictor = init_dashboard()   #ПОМЕНЯЛ НА СУЩЕСТВУЮЩУЮ ФУНКЦИЮ, КОТОРАЯ БЫЛА ОПИСАНА ВЫШЕ. ПРОВЕРЯЕТ НАЛИЧИЕ МОДЕЛИ, ПРОВЕРЯЕТ ДАТАСЕТ, ГРУЗИТ МОДЕЛЬ, ВОЗВРАЩАЕТ ГОТОВЫЙ ОБЪЕКТ
 
     # Загрузка модели
     try:
