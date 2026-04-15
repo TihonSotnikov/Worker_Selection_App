@@ -4,26 +4,24 @@ Streamlit UI
 
 import streamlit as st
 import pandas as pd
-#УДАЛИЛ НЕИСПОЛЬЗУЕМЫЙ ИМПОРТ
 import plotly.graph_objects as go
 import sys
 import os
+from pathlib import Path
 
 # Добавляем путь для импортов
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from app.ml_legacy.predictor import RetentionPredictor    #ПОМЕНЯЛ НАЗВАНИЕ ПАПКИ
+from app.ml_legacy.predictor import RetentionPredictor
 from app.core.enums import ShiftPreference
 
 
 def init_dashboard():
     """Инициализация дашборда: проверка наличия модели и датасета, загрузка модели."""
-    base_dir = Path(__file__).resolve().parents[2]              #
-                                                                #
-    model_path = base_dir / "app" / "ml_legacy" / "model.pkl"   #ИСПРАВИЛ ПУТЬ К МОДЕЛИ И СДЕЛАЛ БОЛЕЕ-МЕНЕЕ УНИВЕРСАЛЬНЫМ
-    data_path = base_dir / "data" / "train_dataset.csv"         #
+    base_dir = Path(__file__).resolve().parents[2]
+    model_path = base_dir / "app" / "ml_legacy" / "model.pkl"
 
-    if not os.path.exists(model_path):
+    if not data_path.exists():
         st.error(f" ML модель не найдена по пути: {model_path}")
         st.info("Сначала запустите main.py для генерации данных и обучения модели")
         return None
@@ -80,11 +78,10 @@ def main():
     predictor = init_dashboard()   #ПОМЕНЯЛ НА СУЩЕСТВУЮЩУЮ ФУНКЦИЮ, КОТОРАЯ БЫЛА ОПИСАНА ВЫШЕ. ПРОВЕРЯЕТ НАЛИЧИЕ МОДЕЛИ, ПРОВЕРЯЕТ ДАТАСЕТ, ГРУЗИТ МОДЕЛЬ, ВОЗВРАЩАЕТ ГОТОВЫЙ ОБЪЕКТ
 
     # Загрузка модели
-    try:
-        predictor.load_model("genai-project/app/ml/model.pkl")
-        st.success("Модель успешно загружена")
-    except:
-        st.warning("Модель не найдена. Сначала обучите модель.")
+    if predictor is None:
+        st.stop()
+
+    st.success("Модель успешно загружена")
 
     # Боковая панель с кнопками-пресетами (ТЗ требование)
     with st.sidebar:
