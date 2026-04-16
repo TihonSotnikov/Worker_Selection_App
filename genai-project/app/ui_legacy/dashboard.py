@@ -47,14 +47,19 @@ def init_dashboard():
 def load_dataset() -> pd.DataFrame:
     base_dir = Path(__file__).resolve().parents[2]
     data_path = base_dir / "data" / "train_dataset.csv"
-    return pd.read_csv(data_path)
+    df = pd.read_csv(data_path)
+
+    if "age" not in df.columns:
+        df["age"] = 30
+
+    return df
 
 
 def row_to_candidate(row: pd.Series) -> dict:
     return {
         "skills_verified_count": int(row["skills_verified_count"]),
         "years_experience": float(row["years_experience"]),
-        "age": int(row["age"]),
+        "age": int(row.get("age", 30)),
         "commute_time_minutes": int(row["commute_time_minutes"]),
         "shift_preference": int(row["shift_preference"]),
         "salary_expectation": int(row["salary_expectation"]),
