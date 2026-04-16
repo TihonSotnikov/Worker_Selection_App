@@ -28,7 +28,7 @@ def init_dashboard():
         return None
 
     # Проверяем наличие данных
-    if not data_path.exists(data_path):
+    if not data_path.exists():
         st.error(f" Тренировочные данные не найдены: {data_path}")
         return None
 
