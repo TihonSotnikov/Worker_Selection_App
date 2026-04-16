@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import sys
 import os
+import random
 from pathlib import Path
 
 # Добавляем путь для импортов
@@ -42,31 +43,69 @@ def init_dashboard():
         return None
 
 
-def create_demo_vectors():
-    """Создание демо-кандидатов для кнопок-пресетов (ТЗ требование)"""
-    # Идеальный кандидат (следует всем правилам)
-    perfect = {
-        "skills_verified_count": 8,
-        "years_experience": 10,
-        "age": 28,
-        "commute_time_minutes": 20,  # < 90 минут
-        "shift_preference": ShiftPreference.DAY_ONLY.value,
-        "salary_expectation": 80000,  # Реалистичная ЗП
-        "has_certifications": True,
+@st.cache_data
+def load_dataset() -> pd.DataFrame:
+    base_dir = Path(__file__).resolve().parents[2]
+    data_path = base_dir / "data" / "train_dataset.csv"
+    df = pd.read_csv(data_path)
+
+    if "age" not in df.columns:
+        df["age"] = 30
+
+    return df
+
+
+def row_to_candidate(row: pd.Series) -> dict:
+    return {
+        "skills_verified_count": int(row["skills_verified_count"]),
+        "years_experience": float(row["years_experience"]),
+        "age": int(row.get("age", 30)),
+        "commute_time_minutes": int(row["commute_time_minutes"]),
+        "shift_preference": int(row["shift_preference"]),
+        "salary_expectation": int(row["salary_expectation"]),
+        "has_certifications": bool(row["has_certifications"]),
     }
 
-    # Проблемный кандидат (нарушает правила)
-    problematic = {
-        "skills_verified_count": 2,  # < 3 навыков
-        "years_experience": 1,  # Мало опыта
-        "age": 55,
-        "commute_time_minutes": 120,  # > 90 минут
-        "shift_preference": ShiftPreference.NIGHT_ONLY.value,
-        "salary_expectation": 120000,  # Высокая ЗП при малом опыте
-        "has_certifications": False,  # Нет сертификатов
-    }
 
-    return perfect, problematic
+def sample_candidate(df: pd.DataFrame, category: str) -> dict:
+    if category == "ideal":
+        subset = df[
+            (df["skills_verified_count"] >= 7)
+            & (df["years_experience"] >= 5)
+            & (df["commute_time_minutes"] <= 40)
+            & (df["has_certifications"] == 1)
+            & (df["retention"] == 1)
+        ]
+
+    elif category == "problematic":
+        subset = df[
+            (
+                (df["skills_verified_count"] < 3)
+                | (df["commute_time_minutes"] > 90)
+                | (
+                    (df["shift_preference"] == ShiftPreference.NIGHT_ONLY.value)
+                    & (df["age"] > 50)
+                )
+                | ((df["years_experience"] < 2) & (df["salary_expectation"] > 100000))
+            )
+            & (df["retention"] == 0)
+        ]
+
+    elif category == "borderline":
+        subset = df[
+            (df["skills_verified_count"].between(4, 6))
+            & (df["years_experience"].between(2, 5))
+            & (df["commute_time_minutes"].between(50, 90))
+        ]
+
+    else:
+        subset = df
+
+    if subset.empty:
+        subset = df
+
+    row = subset.sample(n=1, random_state=random.randint(0, 1_000_000)).iloc[0]
+    return row_to_candidate(row)
 
 
 def main():
@@ -78,6 +117,8 @@ def main():
 
     # Инициализация предсказателя
     predictor = init_dashboard()
+
+    dataset = load_dataset()
 
     # Загрузка модели
     if predictor is None:
@@ -91,15 +132,19 @@ def main():
 
         # Кнопка для идеального кандидата
         if st.button("Загрузить идеального кандидата"):
-            perfect, _ = create_demo_vectors()
-            st.session_state.current_candidate = perfect
+            st.session_state.current_candidate = sample_candidate(dataset, "ideal")
             st.session_state.candidate_name = "Идеальный кандидат"
 
         # Кнопка для проблемного кандидата
         if st.button("Загрузить проблемного кандидата"):
-            _, problematic = create_demo_vectors()
-            st.session_state.current_candidate = problematic
+            st.session_state.current_candidate = sample_candidate(
+                dataset, "problematic"
+            )
             st.session_state.candidate_name = "Проблемный кандидат"
+
+        if st.button("Загрузить спорного кандидата"):
+            st.session_state.current_candidate = sample_candidate(dataset, "borderline")
+            st.session_state.candidate_name = "Спорный кандидат"
 
     # Основная панель
     if "current_candidate" in st.session_state:
