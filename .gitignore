@@ -219,3 +219,7 @@ my_ТЗ.md
 .idea/
 catboost_info/
 data/
+
+# uv
+.python-version
+uv.lock
