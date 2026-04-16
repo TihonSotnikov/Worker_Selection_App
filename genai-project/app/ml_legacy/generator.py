@@ -10,7 +10,6 @@ import os
 import math
 from app.core.enums import ShiftPreference
 
-
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))
 DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "train_dataset.csv")
@@ -20,7 +19,7 @@ class SyntheticDataGenerator:
     def __init__(self, n_samples=1000, seed=42):
         self.n_samples = n_samples
         self.rng = random.Random(seed)
-    
+
     def _compute_risk_score(
         self,
         skills_verified_count: int,
@@ -92,7 +91,7 @@ class SyntheticDataGenerator:
         score += self.rng.uniform(-0.25, 0.25)
 
         return score
-    
+
     def generate_dataset(self):
         """Генерация датасета с жесткими правилами для удержания"""
         data = []

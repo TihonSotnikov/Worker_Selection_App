@@ -86,10 +86,7 @@ def sample_candidate(df: pd.DataFrame, category: str) -> dict:
                     (df["shift_preference"] == ShiftPreference.NIGHT_ONLY.value)
                     & (df["age"] > 50)
                 )
-                | (
-                    (df["years_experience"] < 2)
-                    & (df["salary_expectation"] > 100000)
-                )
+                | ((df["years_experience"] < 2) & (df["salary_expectation"] > 100000))
             )
             & (df["retention"] == 0)
         ]
@@ -140,7 +137,9 @@ def main():
 
         # Кнопка для проблемного кандидата
         if st.button("Загрузить проблемного кандидата"):
-            st.session_state.current_candidate = sample_candidate(dataset, "problematic")
+            st.session_state.current_candidate = sample_candidate(
+                dataset, "problematic"
+            )
             st.session_state.candidate_name = "Проблемный кандидат"
 
         if st.button("Загрузить спорного кандидата"):
@@ -227,7 +226,7 @@ def main():
         )
 
         details_df["Значение"] = details_df["Значение"].astype(str)
-        
+
         st.table(details_df)
 
     else:

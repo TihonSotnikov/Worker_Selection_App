@@ -31,7 +31,7 @@ class RetentionPredictor:
         if retention_probability >= 0.4:
             return "MEDIUM"
         return "HIGH"
-    
+
     def _prepare_feature_df(self, features: Dict) -> pd.DataFrame:
         features = dict(features)
         features.setdefault("age", 30)
@@ -46,14 +46,18 @@ class RetentionPredictor:
         def add(condition: bool, weight: float, text: str):
             if condition:
                 scored_risks.append((weight, text))
-        
+
         add(
             features.get("years_experience", 0) <= 0,
             3.5,
             "Требуется уточнение опыта",
         )
 
-        add(features.get("commute_time_minutes", 0) > 120, 3.0, "Очень длинная дорога до работы")
+        add(
+            features.get("commute_time_minutes", 0) > 120,
+            3.0,
+            "Очень длинная дорога до работы",
+        )
         add(
             90 < features.get("commute_time_minutes", 0) <= 120,
             2.2,
@@ -65,7 +69,11 @@ class RetentionPredictor:
             "Длительное время в пути до работы",
         )
 
-        add(features.get("skills_verified_count", 0) < 3, 2.6, "Мало проверенных навыков (меньше 3)")
+        add(
+            features.get("skills_verified_count", 0) < 3,
+            2.6,
+            "Мало проверенных навыков (меньше 3)",
+        )
         add(
             3 <= features.get("skills_verified_count", 0) < 5,
             1.1,
@@ -106,7 +114,9 @@ class RetentionPredictor:
 
         return result
 
-    def _format_feature_risk(self, feature_name: str, value, features: Dict) -> str | None:
+    def _format_feature_risk(
+        self, feature_name: str, value, features: Dict
+    ) -> str | None:
         if feature_name == "commute_time_minutes":
             if value > 120:
                 return "Очень длинная дорога до работы"
@@ -124,7 +134,10 @@ class RetentionPredictor:
             return None
 
         if feature_name == "shift_preference":
-            if value == ShiftPreference.NIGHT_ONLY.value and features.get("age", 30) > 50:
+            if (
+                value == ShiftPreference.NIGHT_ONLY.value
+                and features.get("age", 30) > 50
+            ):
                 return "Возраст 50+ при выборе только ночных смен"
             return None
 
@@ -150,7 +163,10 @@ class RetentionPredictor:
             return None
 
         if feature_name == "age":
-            if features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value and value > 50:
+            if (
+                features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value
+                and value > 50
+            ):
                 return "Возраст усиливает риск при ночном графике"
             return None
 
