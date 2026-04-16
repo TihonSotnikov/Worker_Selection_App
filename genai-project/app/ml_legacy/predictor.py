@@ -33,9 +33,13 @@ class RetentionPredictor:
 
         df = pd.read_csv(data_path)
 
+        if "age" not in df.columns:
+            df["age"] = 30
+
         feature_cols = [
             "skills_verified_count",
             "years_experience",
+            "age",
             "commute_time_minutes",
             "shift_preference",
             "salary_expectation",
@@ -74,6 +78,9 @@ class RetentionPredictor:
         return self.model
 
     def predict_retention(self, features: Dict):
+        features = dict(features)
+        features.setdefault("age", 30)
+
         if not self.model:
             raise ValueError("Model is not loaded or trained.")
 
@@ -83,10 +90,13 @@ class RetentionPredictor:
 
         return {
             "retention_probability": float(retention_prob),
-            "will_stay": retention_prob > 0.5,
+            "will_stay": bool(retention_prob > 0.5),
         }
 
     def explain_prediction(self, features: Dict) -> List[str]:
+        features = dict(features)
+        features.setdefault("age", 30)
+
         risk_factors = []
 
         if features.get("commute_time_minutes", 0) > 90:
@@ -94,6 +104,12 @@ class RetentionPredictor:
 
         if features.get("skills_verified_count", 0) < 3:
             risk_factors.append("Мало проверенных навыков (меньше 3)")
+
+        if (
+            features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value
+            and features.get("age", 30) > 50
+        ):
+            risk_factors.append("Возраст 50+ при выборе только ночных смен")
 
         if features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value:
             risk_factors.append("Предпочтение ночной смены")
@@ -104,7 +120,10 @@ class RetentionPredictor:
         ):
             risk_factors.append("Мало опыта при высокой зарплатной ожидании")
 
-        if not features.get("has_certifications", False):
+        if (
+            not features.get("has_certifications", False)
+            and features.get("skills_verified_count", 0) > 5
+        ):
             risk_factors.append("Отсутствие подтверждающих сертификатов")
 
         return risk_factors[:3]

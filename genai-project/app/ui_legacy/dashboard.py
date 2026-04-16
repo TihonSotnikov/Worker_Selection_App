@@ -20,15 +20,16 @@ def init_dashboard():
     """Инициализация дашборда: проверка наличия модели и датасета, загрузка модели."""
     base_dir = Path(__file__).resolve().parents[2]
     model_path = base_dir / "app" / "ml_legacy" / "model.pkl"
+    data_path = base_dir / "data" / "train_dataset.csv"
 
-    if not data_path.exists():
+
+    if not model_path.exists():
         st.error(f" ML модель не найдена по пути: {model_path}")
         st.info("Сначала запустите main.py для генерации данных и обучения модели")
         return None
 
     # Проверяем наличие данных
-    data_path = "data/train_dataset.csv"
-    if not os.path.exists(data_path):
+    if not data_path.exists(data_path):
         st.error(f" Тренировочные данные не найдены: {data_path}")
         return None
 
@@ -48,6 +49,7 @@ def create_demo_vectors():
     perfect = {
         "skills_verified_count": 8,
         "years_experience": 10,
+        "age": 28,
         "commute_time_minutes": 20,  # < 90 минут
         "shift_preference": ShiftPreference.DAY_ONLY.value,
         "salary_expectation": 80000,  # Реалистичная ЗП
@@ -58,6 +60,7 @@ def create_demo_vectors():
     problematic = {
         "skills_verified_count": 2,  # < 3 навыков
         "years_experience": 1,  # Мало опыта
+        "age": 55,
         "commute_time_minutes": 120,  # > 90 минут
         "shift_preference": ShiftPreference.NIGHT_ONLY.value,
         "salary_expectation": 120000,  # Высокая ЗП при малом опыте
@@ -75,7 +78,7 @@ def main():
     st.title("Система прогнозирования удержания персонала")
 
     # Инициализация предсказателя
-    predictor = init_dashboard()   #ПОМЕНЯЛ НА СУЩЕСТВУЮЩУЮ ФУНКЦИЮ, КОТОРАЯ БЫЛА ОПИСАНА ВЫШЕ. ПРОВЕРЯЕТ НАЛИЧИЕ МОДЕЛИ, ПРОВЕРЯЕТ ДАТАСЕТ, ГРУЗИТ МОДЕЛЬ, ВОЗВРАЩАЕТ ГОТОВЫЙ ОБЪЕКТ
+    predictor = init_dashboard()
 
     # Загрузка модели
     if predictor is None:
@@ -178,6 +181,8 @@ def main():
             "Да" if candidate["has_certifications"] else "Нет"
         )
 
+        details_df["Значение"] = details_df["Значение"].astype(str)
+        
         st.table(details_df)
 
     else:
