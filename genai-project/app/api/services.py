@@ -213,11 +213,9 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
         Список всех кандидатов, отсортированных по дате (новые первые).
     """
 
-    candidates = (
-        session.exec(
-            select(CandidateTable).order_by(CandidateTable.created_at.desc())
-        ).all()
-    )
+    candidates = session.exec(
+        select(CandidateTable).order_by(CandidateTable.created_at.desc())
+    ).all()
 
     results = []
     for db_candidate in candidates:

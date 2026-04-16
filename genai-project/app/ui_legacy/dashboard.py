@@ -22,7 +22,6 @@ def init_dashboard():
     model_path = base_dir / "app" / "ml_legacy" / "model.pkl"
     data_path = base_dir / "data" / "train_dataset.csv"
 
-
     if not model_path.exists():
         st.error(f" ML модель не найдена по пути: {model_path}")
         st.info("Сначала запустите main.py для генерации данных и обучения модели")
@@ -182,7 +181,7 @@ def main():
         )
 
         details_df["Значение"] = details_df["Значение"].astype(str)
-        
+
         st.table(details_df)
 
     else:

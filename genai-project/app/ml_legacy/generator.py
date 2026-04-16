@@ -13,6 +13,7 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(os.path.dirname(CURRENT_DIR))
 DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "train_dataset.csv")
 
+
 class SyntheticDataGenerator:
     def __init__(self, n_samples=1000, seed=42):
         self.n_samples = n_samples
@@ -72,7 +73,7 @@ class SyntheticDataGenerator:
             data.append(record)
 
         return pd.DataFrame(data)
-    
+
     def save_to_csv(self, path=DEFAULT_DATA_PATH):
         """Сохранение в CSV файл"""
         import os
