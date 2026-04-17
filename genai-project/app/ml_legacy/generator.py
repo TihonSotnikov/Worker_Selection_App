@@ -16,9 +16,28 @@ DEFAULT_DATA_PATH = os.path.join(PROJECT_ROOT, "data", "train_dataset.csv")
 
 
 class SyntheticDataGenerator:
-    def __init__(self, n_samples=1000, seed=42):
+    def __init__(self, n_samples=1000):
         self.n_samples = n_samples
-        self.rng = random.Random(seed)
+        self.rng = random.Random()
+
+    def _generate_age_and_experience(self) -> tuple[int, float]:
+        age = self.rng.randint(20, 60)
+
+        career_start_age = self.rng.choices(
+            population=[18, 19, 20, 21, 22, 23, 24],
+            weights=[1, 3, 5, 5, 4, 2, 1],
+            k=1,
+        )[0]
+
+        career_start_age = min(career_start_age, age)
+        max_experience = max(0, age - career_start_age)
+
+        years_experience = round(
+            self.rng.triangular(0, max_experience, max_experience * 0.6),
+            1,
+        )
+
+        return age, years_experience
 
     def _compute_risk_score(
         self,
@@ -96,15 +115,14 @@ class SyntheticDataGenerator:
         """Генерация датасета с жесткими правилами для удержания"""
         data = []
 
-        for i in range(self.n_samples):
+        for _ in range(self.n_samples):
             # Генерация признаков для ML модели
             skills_verified_count = self.rng.randint(0, 10)
-            years_experience = self.rng.uniform(0, 30)
+            age, years_experience = self._generate_age_and_experience()
             commute_time_minutes = self.rng.randint(10, 180)
             shift_preference = self.rng.choice(list(ShiftPreference))
             salary_expectation = self.rng.randint(30000, 150000)
             has_certifications = self.rng.random() > 0.7
-            age = self.rng.randint(20, 60)  # Для дополнительных правил
 
             risk_score = self._compute_risk_score(
                 skills_verified_count=skills_verified_count,
@@ -130,6 +148,11 @@ class SyntheticDataGenerator:
                 "has_certifications": int(has_certifications),
                 "retention": retention,
             }
+
+            max_allowed_experience = max(0, age - 19)
+            if years_experience > max_allowed_experience:
+                continue
+
             data.append(record)
 
         return pd.DataFrame(data)
@@ -149,11 +172,35 @@ class SyntheticDataGenerator:
 def generate_if_needed():
     """Проверяет наличие датасета и генерирует если нужно"""
     data_path = DEFAULT_DATA_PATH
+    should_generate = False
+
     if not os.path.exists(data_path) or os.path.getsize(data_path) == 0:
+        should_generate = True
+    else:
+        try:
+            df = pd.read_csv(data_path)
+
+            if "age" not in df.columns:
+                print("В датасете нет age. Перегенерация...")
+                should_generate = True
+            else:
+                invalid_rows = df[
+                    df["years_experience"] > (df["age"] - 18).clip(lower=0)
+                ]
+                if not invalid_rows.empty:
+                    print(
+                        f"Найдено {len(invalid_rows)} нереалистичных строк. Перегенерация..."
+                    )
+                    should_generate = True
+        except Exception:
+            should_generate = True
+
+    if should_generate:
         print("Генерация тренировочных данных...")
         generator = SyntheticDataGenerator(n_samples=1000)
         generator.save_to_csv(data_path)
         print(f"Сгенерировано 1000 записей в {data_path}")
     else:
-        print(f"Датасет уже существует: {data_path}")
+        print(f"Датасет уже существует и корректен: {data_path}")
+
     return data_path

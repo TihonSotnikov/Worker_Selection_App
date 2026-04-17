@@ -36,7 +36,11 @@ def init_dashboard():
     # Пытаемся загрузить модель
     try:
         predictor = RetentionPredictor()
-        predictor.load_model(model_path)
+        ok = predictor.load_model(model_path)
+
+        if not ok:
+            st.error(f"Не удалось загрузить ML модель по пути: {model_path}")
+            return None
         return predictor
     except Exception as e:
         st.error(f" Ошибка загрузки модели: {str(e)}")
@@ -47,10 +51,21 @@ def init_dashboard():
 def load_dataset() -> pd.DataFrame:
     base_dir = Path(__file__).resolve().parents[2]
     data_path = base_dir / "data" / "train_dataset.csv"
+
     df = pd.read_csv(data_path)
 
     if "age" not in df.columns:
-        df["age"] = 30
+        raise ValueError(
+        "В data/train_dataset.csv нет колонки age. "
+        "Перегенерируй датасет через app/ml_legacy/generator.py"
+    )
+
+    invalid_rows = df[df["years_experience"] > (df["age"] - 18).clip(lower=0)]
+    if not invalid_rows.empty:
+        raise ValueError(
+            f"В датасете {len(invalid_rows)} нереалистичных строк. "
+            "Удалите train_dataset.csv, model.pkl и перезапустите генерацию."
+        )
 
     return df
 
@@ -59,7 +74,7 @@ def row_to_candidate(row: pd.Series) -> dict:
     return {
         "skills_verified_count": int(row["skills_verified_count"]),
         "years_experience": float(row["years_experience"]),
-        "age": int(row.get("age", 30)),
+        "age": int(row["age"]),
         "commute_time_minutes": int(row["commute_time_minutes"]),
         "shift_preference": int(row["shift_preference"]),
         "salary_expectation": int(row["salary_expectation"]),
@@ -67,7 +82,25 @@ def row_to_candidate(row: pd.Series) -> dict:
     }
 
 
-def sample_candidate(df: pd.DataFrame, category: str) -> dict:
+def build_edge_case_candidate() -> dict:
+    return {
+        "skills_verified_count": random.randint(3, 8),
+        "years_experience": 0.0,
+        "age": random.randint(21, 35),
+        "commute_time_minutes": random.randint(20, 90),
+        "shift_preference": random.choice([
+            ShiftPreference.DAY_ONLY.value,
+            ShiftPreference.NIGHT_ONLY.value,
+            ShiftPreference.ANY.value,
+        ]),
+        "salary_expectation": random.randint(50000, 110000),
+        "has_certifications": random.choice([True, False]),
+    }
+
+
+def sample_candidate(
+    df: pd.DataFrame, category: str, predictor: RetentionPredictor | None = None
+) -> dict:
     if category == "ideal":
         subset = df[
             (df["skills_verified_count"] >= 7)
@@ -92,11 +125,22 @@ def sample_candidate(df: pd.DataFrame, category: str) -> dict:
         ]
 
     elif category == "borderline":
-        subset = df[
-            (df["skills_verified_count"].between(4, 6))
-            & (df["years_experience"].between(2, 5))
-            & (df["commute_time_minutes"].between(50, 90))
-        ]
+        if predictor is not None and predictor.model is not None:
+            work_df = df.copy()
+            work_df["pred_prob"] = predictor.model.predict_proba(
+                work_df[predictor.feature_names]
+            )[:, 1]
+
+            subset = work_df[work_df["pred_prob"].between(0.45, 0.55)]
+
+            if subset.empty:
+                subset = work_df[work_df["pred_prob"].between(0.40, 0.60)]
+        else:
+            subset = df[
+                (df["skills_verified_count"].between(4, 6))
+                & (df["years_experience"].between(2, 5))
+                & (df["commute_time_minutes"].between(50, 90))
+            ]
 
     else:
         subset = df
@@ -132,19 +176,23 @@ def main():
 
         # Кнопка для идеального кандидата
         if st.button("Загрузить идеального кандидата"):
-            st.session_state.current_candidate = sample_candidate(dataset, "ideal")
+            st.session_state.current_candidate = sample_candidate(dataset, "ideal", predictor)
             st.session_state.candidate_name = "Идеальный кандидат"
 
         # Кнопка для проблемного кандидата
         if st.button("Загрузить проблемного кандидата"):
             st.session_state.current_candidate = sample_candidate(
-                dataset, "problematic"
+                dataset, "problematic", predictor
             )
             st.session_state.candidate_name = "Проблемный кандидат"
 
         if st.button("Загрузить спорного кандидата"):
-            st.session_state.current_candidate = sample_candidate(dataset, "borderline")
+            st.session_state.current_candidate = sample_candidate(dataset, "borderline", predictor)
             st.session_state.candidate_name = "Спорный кандидат"
+
+        if st.button("Загрузить Edge Case"):
+            st.session_state.current_candidate = build_edge_case_candidate()
+            st.session_state.candidate_name = "Edge Case: требуется уточнение опыта"
 
     # Основная панель
     if "current_candidate" in st.session_state:
@@ -165,11 +213,25 @@ def main():
                 "Вероятность удержания", f"{prediction['retention_probability']:.1%}"
             )
 
+            risk_level_labels = {
+                "LOW": "Низкий риск",
+                "MEDIUM": "Средний риск",
+                "HIGH": "Высокий риск",
+            }
+            st.metric(
+                "Уровень риска",
+                risk_level_labels.get(prediction["risk_level"], prediction["risk_level"]),
+            )
+
             # Индикатор решения
-            if prediction["will_stay"]:
-                st.success(" Рекомендуется к найму")
+            if prediction["requires_review"]:
+                st.warning("Требуется дополнительная проверка данных")
+            elif prediction["risk_level"] == "LOW":
+                st.success("Низкий риск: подходит для дальнейшего рассмотрения")
+            elif prediction["risk_level"] == "MEDIUM":
+                st.info("Средний риск: рекомендуется адаптация и вводное сопровождение")
             else:
-                st.error(" Высокий риск увольнения")
+                st.error("Высокий риск: требуется осторожная оценка и дополнительная проверка")
 
         with col2:
             # Круговая диаграмма риска
@@ -179,9 +241,10 @@ def main():
                         mode="gauge+number",
                         value=prediction["retention_probability"] * 100,
                         title={"text": "Вероятность удержания"},
+                        number={"font": {"size": 56}},
                         gauge={
-                            "axis": {"range": [0, 100]},
-                            "bar": {"color": "darkblue"},
+                            "axis": {"range": [0, 100], "tickwidth": 1},
+                            "bar": {"color": "darkblue", "thickness": 0.35},
                             "steps": [
                                 {"range": [0, 30], "color": "red"},
                                 {"range": [30, 70], "color": "yellow"},
@@ -191,16 +254,34 @@ def main():
                     )
                 ]
             )
+            
+            fig.update_layout(
+                width=600,
+                height=340,
+                margin=dict(l=30, r=30, t=70, b=20),
+            )
+
             st.plotly_chart(fig, use_container_width=True)
 
         # Факторы риска (ТЗ: объяснение предсказания)
         st.subheader("Факторы риска")
         risk_factors = predictor.explain_prediction(candidate)
 
-        if risk_factors:
-            for factor in risk_factors:
+        display_risk_factors = [
+            factor for factor in risk_factors
+            if factor != "Требуется уточнение опыта"
+        ]
+
+        if prediction["requires_review"]:
+            st.warning(
+                "Требуется уточнение: у кандидата отсутствуют или неполны данные об опыте. "
+                "Кейс относится к Yellow Zone и требует ручной проверки."
+            )
+
+        if display_risk_factors:
+            for factor in display_risk_factors:
                 st.warning(f"• {factor}")
-        else:
+        elif not prediction["requires_review"]:
             st.info("Значительных факторов риска не обнаружено")
 
         # Детали кандидата
@@ -228,7 +309,6 @@ def main():
         details_df["Значение"] = details_df["Значение"].astype(str)
 
         st.table(details_df)
-
     else:
         # Инструкция при первом запуске
         st.info("""
@@ -236,11 +316,14 @@ def main():
 
         1. **Идеальный кандидат** - соответствует всем правилам удержания
         2. **Проблемный кандидат** - нарушает несколько правил
+        3. **Спорный кандидат** — пограничный кейс около порога решения модели
+        4. **Edge Case** — неполные данные по опыту, требуется ручная проверка
 
         Система покажет:
         • Вероятность удержания
+        • Уровень риска
         • Факторы риска
-        • Рекомендацию по найму
+        • Рекомендацию по дальнейшему рассмотрению
         """)
 
 
