@@ -31,15 +31,21 @@ class RetentionPredictor:
         if retention_probability >= 0.4:
             return "MEDIUM"
         return "HIGH"
+    
+    def _detect_requires_review(self, features: Dict) -> bool:
+        return features.get("years_experience", 0) <= 0
 
     def _prepare_feature_df(self, features: Dict) -> pd.DataFrame:
         features = dict(features)
-        features.setdefault("age", 30)
+        required_features = set(self.feature_names or [])
+        missing = required_features - set(features.keys())
+        if missing:
+            raise ValueError(f"Отсутствуют признаки для модели: {sorted(missing)}")
+
         return pd.DataFrame([features])[self.feature_names]
 
     def _rule_based_weighted_risks(self, features: Dict) -> List[str]:
         features = dict(features)
-        features.setdefault("age", 30)
 
         scored_risks = []
 
@@ -82,7 +88,7 @@ class RetentionPredictor:
 
         add(
             features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value
-            and features.get("age", 30) > 50,
+            and features.get("age", 0) > 50,
             2.0,
             "Возраст 50+ при выборе только ночных смен",
         )
@@ -136,7 +142,7 @@ class RetentionPredictor:
         if feature_name == "shift_preference":
             if (
                 value == ShiftPreference.NIGHT_ONLY.value
-                and features.get("age", 30) > 50
+                and features.get("age", 0) > 50
             ):
                 return "Возраст 50+ при выборе только ночных смен"
             return None
@@ -180,7 +186,15 @@ class RetentionPredictor:
         df = pd.read_csv(data_path)
 
         if "age" not in df.columns:
-            df["age"] = 30
+            raise ValueError("В датасете нет колонки age")
+        
+        invalid_rows = df[df["years_experience"] > (df["age"] - 18).clip(lower=0)]
+
+        if not invalid_rows.empty:
+            raise ValueError(
+                 f"В датасете есть нереалистичные записи: {len(invalid_rows)} строк. "
+                 "Перегенерируй train_dataset.csv"
+            )
 
         feature_cols = [
             "skills_verified_count",
@@ -228,17 +242,28 @@ class RetentionPredictor:
             raise ValueError("Model is not loaded or trained.")
 
         feature_df = self._prepare_feature_df(features)
-        retention_prob = self.model.predict_proba(feature_df)[0, 1]
+        retention_prob = float(self.model.predict_proba(feature_df)[0, 1])
+
+        requires_review = self._detect_requires_review(features)
+
+        # Edge Case вшит в бизнес-логику:
+        # если опыт отсутствует или нулевой, кейс уходит в Yellow Zone
+        if requires_review:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = self._map_risk_level(retention_prob)
 
         return {
-            "retention_probability": float(retention_prob),
+            "retention_probability": retention_prob,
             "will_stay": bool(retention_prob > 0.5),
-            "risk_level": self._map_risk_level(retention_prob),
+            "risk_level": risk_level,
+            "requires_review": requires_review,
         }
 
     def explain_prediction(self, features: Dict) -> List[str]:
         features = dict(features)
-        features.setdefault("age", 30)
+
+        requires_review = self._detect_requires_review(features)
 
         if not self.model or not self.feature_names:
             return self._rule_based_weighted_risks(features)
@@ -285,13 +310,23 @@ class RetentionPredictor:
                         result.append(risk)
                     if len(result) == 3:
                         break
-
+                
+                if requires_review and "Требуется уточнение опыта" not in result:
+                    result.insert(0, "Требуется уточнение опыта")
                 if result:
-                    return result
-        except Exception:
-            pass
+                    return result[:3]
+        # SHAP-объяснение — best effort.
+        # Если модельная интерпретация не сработала из-за проблем с признаками
+        # или внутренней ошибкой CatBoost, возвращаем устойчивый rule-based fallback.
+        except (ValueError, KeyError, TypeError, IndexError, AttributeError, cb.CatBoostError) as e:
+            print(f"Explain fallback activated: {e}")
 
-        return self._rule_based_weighted_risks(features)
+        result = self._rule_based_weighted_risks(features)
+
+        if requires_review and "Требуется уточнение опыта" not in result:
+            result.insert(0, "Требуется уточнение опыта")
+
+        return result[:3]
 
     def save_model(self, path=DEFAULT_MODEL_PATH):
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -301,15 +336,33 @@ class RetentionPredictor:
         print(f"Model saved explicitly to: {path}")
 
     def load_model(self, path=DEFAULT_MODEL_PATH):
-        """Загрузка обученной модели"""
+        """Загрузка обученной модели. Возвращает False, если файл отсутствует или поврежден."""
         if not os.path.exists(path):
             print(f"Model file not found at {path}")
-            return
+            self.model = None
+            self.feature_names = None
+            return False
+        try:
+            with open(path, "rb") as f:
+                data = pickle.load(f)
+            
+            model = data["model"]
+            feature_names = data["feature_names"]
 
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-            self.model = data["model"]
-            self.feature_names = data["feature_names"]
+            if model is None or not feature_names:
+                print(f"Invalid model payload at {path}")
+                self.model = None
+                self.feature_names = None
+                return False
+            
+            self.model = model
+            self.feature_names = feature_names
+            return True
+        except (OSError, EOFError, pickle.UnpicklingError, KeyError, TypeError) as e:
+            print(f"Failed to load model from {path}: {e}")
+            self.model = None
+            self.feature_names = None
+            return False
 
 
 def train_if_needed():
