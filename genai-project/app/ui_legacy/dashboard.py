@@ -4,7 +4,6 @@ Streamlit UI
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import sys
 import os
 import random
@@ -14,37 +13,63 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from app.ml_legacy.predictor import RetentionPredictor
+from app.ml_legacy.generator import generate_if_needed
 from app.core.enums import ShiftPreference
 
 
+RISK_THEME = {
+    "LOW": {
+        "name": "Низкий риск",
+        "zone": "Зелёная зона",
+        "bg": "#10261c",
+        "border": "#1f6f4a",
+        "text": "#86efac",
+        "bar": "#22c55e",
+    },
+    "MEDIUM": {
+        "name": "Средний риск",
+        "zone": "Жёлтая зона",
+        "bg": "#2b2412",
+        "border": "#8b6f2b",
+        "text": "#f6d365",
+        "bar": "#eab308",
+    },
+    "HIGH": {
+        "name": "Высокий риск",
+        "zone": "Красная зона",
+        "bg": "#2a1518",
+        "border": "#8f2d38",
+        "text": "#fca5a5",
+        "bar": "#ef4444",
+    },
+}
+
+
+@st.cache_resource
 def init_dashboard():
-    """Инициализация дашборда: проверка наличия модели и датасета, загрузка модели."""
     base_dir = Path(__file__).resolve().parents[2]
     model_path = base_dir / "app" / "ml_legacy" / "model.pkl"
     data_path = base_dir / "data" / "train_dataset.csv"
 
-    if not model_path.exists():
-        st.error(f" ML модель не найдена по пути: {model_path}")
-        st.info("Сначала запустите main.py для генерации данных и обучения модели")
-        return None
+    dataset_existed = data_path.exists()
 
-    # Проверяем наличие данных
-    if not data_path.exists():
-        st.error(f" Тренировочные данные не найдены: {data_path}")
-        return None
+    generate_if_needed()
+    load_dataset.clear()
 
-    # Пытаемся загрузить модель
-    try:
-        predictor = RetentionPredictor()
-        ok = predictor.load_model(model_path)
+    predictor = RetentionPredictor()
+    ok = predictor.load_model(model_path)
 
-        if not ok:
-            st.error(f"Не удалось загрузить ML модель по пути: {model_path}")
-            return None
-        return predictor
-    except Exception as e:
-        st.error(f" Ошибка загрузки модели: {str(e)}")
-        return None
+    model_trained = False
+    if not ok:
+        predictor.train_model()
+        predictor.save_model(model_path)
+        model_trained = True
+
+    return predictor, {
+        "dataset_created": not dataset_existed,
+        "model_trained": model_trained,
+        "model_loaded": ok or model_trained,
+    }
 
 
 @st.cache_data
@@ -160,37 +185,46 @@ def main():
     st.title("Система прогнозирования удержания персонала")
 
     # Инициализация предсказателя
-    predictor = init_dashboard()
+    predictor, boot_info = init_dashboard()
 
-    dataset = load_dataset()
+    st.caption("Локальный автономный режим: dashboard работает без main.py и API")
 
-    # Загрузка модели
-    if predictor is None:
+    if boot_info["dataset_created"]:
+        st.success("Локально создан train_dataset.csv")
+
+    if boot_info["model_trained"]:
+        st.success("Локально обучена и сохранена model.pkl")
+
+    if boot_info["model_loaded"] and not boot_info["model_trained"]:
+        st.success("Модель успешно загружена")
+
+    try:
+        dataset = load_dataset()
+    except Exception as e:
+        st.error(f"Не удалось загрузить датасет: {e}")
         st.stop()
-
-    st.success("Модель успешно загружена")
 
     # Боковая панель с кнопками-пресетами (ТЗ требование)
     with st.sidebar:
         st.header("Демонстрация")
 
         # Кнопка для идеального кандидата
-        if st.button("Загрузить идеального кандидата"):
+        if st.button("Загрузить идеального кандидата", use_container_width=True):
             st.session_state.current_candidate = sample_candidate(dataset, "ideal", predictor)
             st.session_state.candidate_name = "Идеальный кандидат"
 
         # Кнопка для проблемного кандидата
-        if st.button("Загрузить проблемного кандидата"):
+        if st.button("Загрузить проблемного кандидата", use_container_width=True):
             st.session_state.current_candidate = sample_candidate(
                 dataset, "problematic", predictor
             )
             st.session_state.candidate_name = "Проблемный кандидат"
 
-        if st.button("Загрузить спорного кандидата"):
+        if st.button("Загрузить спорного кандидата", use_container_width=True):
             st.session_state.current_candidate = sample_candidate(dataset, "borderline", predictor)
             st.session_state.candidate_name = "Спорный кандидат"
 
-        if st.button("Загрузить Edge Case"):
+        if st.button("Загрузить Edge Case", use_container_width=True):
             st.session_state.current_candidate = build_edge_case_candidate()
             st.session_state.candidate_name = "Edge Case: требуется уточнение опыта"
 
@@ -203,6 +237,13 @@ def main():
 
         # Предсказание удержания
         prediction = predictor.predict_retention(candidate)
+
+        theme = RISK_THEME[prediction["risk_level"]]
+        zone_text = (
+            "Жёлтая зона: требуется ручная проверка данных"
+            if prediction["requires_review"]
+            else f"{theme['zone']}: {theme['name'].lower()}"
+        )
 
         # Визуализация вероятности удержания (ТЗ: индикаторы риска)
         col1, col2 = st.columns(2)
@@ -220,48 +261,95 @@ def main():
             }
             st.metric(
                 "Уровень риска",
-                risk_level_labels.get(prediction["risk_level"], prediction["risk_level"]),
+                risk_level_labels.get(
+                    prediction["risk_level"], prediction["risk_level"]
+                ),
             )
 
             # Индикатор решения
             if prediction["requires_review"]:
-                st.warning("Требуется дополнительная проверка данных")
+                status_text = "Требуется дополнительная проверка"
+                status_bg = "#111827"
+                status_border = "#263244"
+                status_color = "#e5e7eb"
             elif prediction["risk_level"] == "LOW":
-                st.success("Низкий риск: подходит для дальнейшего рассмотрения")
+                status_text = "Низкий риск: подходит для дальнейшего рассмотрения"
+                status_bg = theme["bg"]
+                status_border = theme["border"]
+                status_color = theme["text"]
             elif prediction["risk_level"] == "MEDIUM":
-                st.info("Средний риск: рекомендуется адаптация и вводное сопровождение")
+                status_text = "Средний риск: рекомендуется адаптация и вводное сопровождение"
+                status_bg = theme["bg"]
+                status_border = theme["border"]
+                status_color = theme["text"]
             else:
-                st.error("Высокий риск: требуется осторожная оценка и дополнительная проверка")
+                status_text = "Высокий риск: требуется осторожная оценка и дополнительная проверка"
+                status_bg = theme["bg"]
+                status_border = theme["border"]
+                status_color = theme["text"]
+
+            st.markdown(
+                f"""
+                <div style="
+                    margin-top: 18px;
+                    padding: 18px;
+                    border-radius: 14px;
+                    background: {status_bg};
+                    border: 1px solid {status_border};
+                    color: {status_color};
+                    font-weight: 600;
+                    font-size: 16px;
+                ">
+                    {status_text}
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         with col2:
-            # Круговая диаграмма риска
-            fig = go.Figure(
-                data=[
-                    go.Indicator(
-                        mode="gauge+number",
-                        value=prediction["retention_probability"] * 100,
-                        title={"text": "Вероятность удержания"},
-                        number={"font": {"size": 56}},
-                        gauge={
-                            "axis": {"range": [0, 100], "tickwidth": 1},
-                            "bar": {"color": "darkblue", "thickness": 0.35},
-                            "steps": [
-                                {"range": [0, 30], "color": "red"},
-                                {"range": [30, 70], "color": "yellow"},
-                                {"range": [70, 100], "color": "green"},
-                            ],
-                        },
-                    )
-                ]
-            )
-            
-            fig.update_layout(
-                width=600,
-                height=340,
-                margin=dict(l=30, r=30, t=70, b=20),
-            )
+            progress_width = int(prediction["retention_probability"] * 100)
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.markdown(
+                f"""
+                <div style="margin-top: 8px;">
+                    <div style="
+                        width: 100%;
+                        height: 16px;
+                        background: #1f2430;
+                        border-radius: 999px;
+                        overflow: hidden;
+                        border: 1px solid #2b3240;
+                    ">
+                        <div style="
+                            width: {progress_width}%;
+                            height: 100%;
+                            background: {theme['bar']};
+                            border-radius: 999px;
+                        "></div>
+                    </div>
+                    <div style="
+                        margin-top: 10px;
+                        font-size: 15px;
+                        color: #9ca3af;
+                    ">
+                        Retention Score: {prediction['retention_probability']:.1%}
+                    </div>
+                    <div style="
+                        margin-top: 18px;
+                        padding: 16px 18px;
+                        border-radius: 14px;
+                        background: {theme['bg']};
+                        border: 1px solid {theme['border']};
+                        color: {theme['text']};
+                        font-weight: 600;
+                        font-size: 16px;
+                    ">
+                        {zone_text}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         # Факторы риска (ТЗ: объяснение предсказания)
         st.subheader("Факторы риска")
@@ -273,14 +361,63 @@ def main():
         ]
 
         if prediction["requires_review"]:
-            st.warning(
-                "Требуется уточнение: у кандидата отсутствуют или неполны данные об опыте. "
-                "Кейс относится к Yellow Zone и требует ручной проверки."
+            st.markdown(
+                """
+                <div style="
+                    margin-bottom: 16px;
+                    padding: 16px 18px;
+                    border-radius: 14px;
+                    background: #111827;
+                    border: 1px solid #263244;
+                    color: #e5e7eb;
+                    line-height: 1.5;
+                ">
+                    <div style="
+                        font-size: 18px;
+                        font-weight: 700;
+                        margin-bottom: 10px;
+                        color: #f3f4f6;
+                    ">
+                        Ключевой фактор риска
+                    </div>
+                    <div style="
+                        font-size: 16px;
+                        color: #d1d5db;
+                    ">
+                        Отсутствуют или неполны данные об опыте работы.
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
 
-        if display_risk_factors:
-            for factor in display_risk_factors:
-                st.warning(f"• {factor}")
+        if display_risk_factors and not prediction["requires_review"]:
+            risk_text = "<br>".join([f"• {factor}" for factor in display_risk_factors])
+            st.markdown(
+                f"""
+                <div style="
+                    padding:18px;
+                    border-radius:14px;
+                    background:#111827;
+                    border:1px solid #263244;
+                    color:#e5e7eb;
+                    line-height:1.6;
+                ">
+                    <div style="
+                        font-size:18px;
+                        font-weight:700;
+                        margin-bottom:12px;
+                        color:#f3f4f6;
+                    ">
+                        Ключевые факторы риска
+                    </div>
+                    <div style="font-size:16px; color:#d1d5db;">
+                        {risk_text}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         elif not prediction["requires_review"]:
             st.info("Значительных факторов риска не обнаружено")
 

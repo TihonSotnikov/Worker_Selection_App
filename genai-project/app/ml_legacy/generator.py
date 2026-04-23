@@ -115,7 +115,7 @@ class SyntheticDataGenerator:
         """Генерация датасета с жесткими правилами для удержания"""
         data = []
 
-        for _ in range(self.n_samples):
+        while len(data) < self.n_samples:
             # Генерация признаков для ML модели
             skills_verified_count = self.rng.randint(0, 10)
             age, years_experience = self._generate_age_and_experience()
@@ -149,7 +149,7 @@ class SyntheticDataGenerator:
                 "retention": retention,
             }
 
-            max_allowed_experience = max(0, age - 19)
+            max_allowed_experience = max(0, age - 18)
             if years_experience > max_allowed_experience:
                 continue
 
@@ -198,8 +198,8 @@ def generate_if_needed():
     if should_generate:
         print("Генерация тренировочных данных...")
         generator = SyntheticDataGenerator(n_samples=1000)
-        generator.save_to_csv(data_path)
-        print(f"Сгенерировано 1000 записей в {data_path}")
+        df = generator.save_to_csv(data_path)
+        print(f"Сгенерировано {len(df)} записей в {data_path}")
     else:
         print(f"Датасет уже существует и корректен: {data_path}")
 

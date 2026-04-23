@@ -242,18 +242,28 @@ class RetentionPredictor:
             raise ValueError("Model is not loaded or trained.")
 
         feature_df = self._prepare_feature_df(features)
-        retention_prob = self.model.predict_proba(feature_df)[0, 1]
+        retention_prob = float(self.model.predict_proba(feature_df)[0, 1])
+
         requires_review = self._detect_requires_review(features)
 
+        # Edge Case вшит в бизнес-логику:
+        # если опыт отсутствует или нулевой, кейс уходит в Yellow Zone
+        if requires_review:
+            risk_level = "MEDIUM"
+        else:
+            risk_level = self._map_risk_level(retention_prob)
+
         return {
-            "retention_probability": float(retention_prob),
+            "retention_probability": retention_prob,
             "will_stay": bool(retention_prob > 0.5),
-            "risk_level": self._map_risk_level(retention_prob),
-            "requires_review": requires_review
+            "risk_level": risk_level,
+            "requires_review": requires_review,
         }
 
     def explain_prediction(self, features: Dict) -> List[str]:
         features = dict(features)
+
+        requires_review = self._detect_requires_review(features)
 
         if not self.model or not self.feature_names:
             return self._rule_based_weighted_risks(features)
@@ -300,16 +310,23 @@ class RetentionPredictor:
                         result.append(risk)
                     if len(result) == 3:
                         break
-
+                
+                if requires_review and "Требуется уточнение опыта" not in result:
+                    result.insert(0, "Требуется уточнение опыта")
                 if result:
-                    return result
+                    return result[:3]
         # SHAP-объяснение — best effort.
         # Если модельная интерпретация не сработала из-за проблем с признаками
         # или внутренней ошибкой CatBoost, возвращаем устойчивый rule-based fallback.
         except (ValueError, KeyError, TypeError, IndexError, AttributeError, cb.CatBoostError) as e:
             print(f"Explain fallback activated: {e}")
 
-        return self._rule_based_weighted_risks(features)
+        result = self._rule_based_weighted_risks(features)
+
+        if requires_review and "Требуется уточнение опыта" not in result:
+            result.insert(0, "Требуется уточнение опыта")
+
+        return result[:3]
 
     def save_model(self, path=DEFAULT_MODEL_PATH):
         os.makedirs(os.path.dirname(path), exist_ok=True)
