@@ -213,7 +213,6 @@ marimo/_lsp/
 __marimo__/
 
 # Local development
-plan.md
 roles.md
 my_ТЗ.md
 .idea/

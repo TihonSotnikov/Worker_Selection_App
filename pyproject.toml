@@ -10,7 +10,7 @@ dependencies = [
     "lm-format-enforcer>=0.11.3",
     "pytest>=9.0.2",
     "torch>=2.11.0",
-    "transformers<5",
+    "transformers[torch]<5",
     "uvicorn>=0.43.0",
     "colorama>=0.4.0",
     "python-multipart>=0.0.20",
