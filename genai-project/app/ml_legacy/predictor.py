@@ -34,6 +34,40 @@ class RetentionPredictor:
     
     def _detect_requires_review(self, features: Dict) -> bool:
         return features.get("years_experience", 0) <= 0
+    
+    def _estimate_uncertainty_band(
+        self,
+        retention_probability: float,
+        features: Dict,
+        requires_review: bool = False,
+    ) -> dict:
+        """
+        UX-коридор неопределённости.
+
+        Это НЕ строгий статистический доверительный интервал.
+        Это честный интерфейсный индикатор: чем ближе кандидат к спорной зоне
+        или чем хуже полнота данных, тем шире коридор.
+        """
+
+        if requires_review:
+            margin = 0.12
+        elif 0.4 <= retention_probability < 0.7:
+            margin = 0.08
+        elif retention_probability < 0.4:
+            margin = 0.06
+        else:
+            margin = 0.05
+
+        return {
+            "uncertainty_low": max(0.0, retention_probability - margin),
+            "uncertainty_high": min(1.0, retention_probability + margin),
+            "uncertainty_margin": margin,
+            "uncertainty_note": (
+                "Ориентировочный коридор неопределённости. "
+                "Это не строгий статистический доверительный интервал, "
+                "а UX-подсказка для HR-интерпретации результата."
+            ),
+        }
 
     def _prepare_feature_df(self, features: Dict) -> pd.DataFrame:
         features = dict(features)
@@ -253,11 +287,18 @@ class RetentionPredictor:
         else:
             risk_level = self._map_risk_level(retention_prob)
 
+        uncertainty = self._estimate_uncertainty_band(
+            retention_probability=retention_prob,
+            features=features,
+            requires_review=requires_review,
+        )
+
         return {
             "retention_probability": retention_prob,
             "will_stay": bool(retention_prob > 0.5),
             "risk_level": risk_level,
             "requires_review": requires_review,
+            **uncertainty,
         }
 
     def explain_prediction(self, features: Dict) -> List[str]:
