@@ -4,9 +4,9 @@ const state = {
 };
 
 const presetLabels = {
-  ideal: 'Идеальный кандидат',
-  problematic: 'Проблемный кандидат',
-  borderline: 'Спорный кандидат',
+  green: 'Идеальный кандидат',
+  red: 'Проблемный кандидат',
+  yellow: 'Спорный кандидат',
   edge: 'Edge Case: требуется уточнение опыта',
 };
 
@@ -42,12 +42,38 @@ const detailLabels = {
   shift_preference: 'График',
   salary_expectation: 'Ожидаемая зарплата',
   has_certifications: 'Сертификаты',
+  education_level: 'Образование',
+  previous_turnovers: 'Предыдущие увольнения',
+  family_status: 'Семейный статус',
+  housing_type: 'Тип жилья',
+  has_transport: 'Личный транспорт',
 };
 
 const shiftLabels = {
   0: 'Дневная смена',
   1: 'Ночная смена',
   2: 'Любая смена',
+};
+
+const educationLabels = {
+  0: 'Среднее',
+  1: 'Среднее специальное',
+  2: 'Колледж',
+  3: 'Высшее',
+};
+
+const familyLabels = {
+  0: 'Без семьи / не указано',
+  1: 'В браке, без детей',
+  2: 'В браке, есть дети',
+  3: 'Один родитель',
+};
+
+const housingLabels = {
+  0: 'Своё жильё',
+  1: 'Аренда',
+  2: 'Общежитие',
+  3: 'С родителями',
 };
 
 const form = document.querySelector('#candidateForm');
@@ -135,6 +161,11 @@ function fillCandidateForm(candidate) {
   form.elements.shift_preference.value = String(candidate.shift_preference);
   form.elements.salary_expectation.value = candidate.salary_expectation;
   form.elements.has_certifications.checked = Boolean(candidate.has_certifications);
+  form.elements.education_level.value = String(candidate.education_level);
+  form.elements.previous_turnovers.value = candidate.previous_turnovers;
+  form.elements.family_status.value = String(candidate.family_status);
+  form.elements.housing_type.value = String(candidate.housing_type);
+  form.elements.has_transport.checked = Boolean(candidate.has_transport);
 }
 
 function readCandidateForm() {
@@ -146,48 +177,74 @@ function readCandidateForm() {
     shift_preference: Number(form.elements.shift_preference.value),
     salary_expectation: Number(form.elements.salary_expectation.value),
     has_certifications: Boolean(form.elements.has_certifications.checked),
+    education_level: Number(form.elements.education_level.value),
+    previous_turnovers: Number(form.elements.previous_turnovers.value),
+    family_status: Number(form.elements.family_status.value),
+    housing_type: Number(form.elements.housing_type.value),
+    has_transport: Boolean(form.elements.has_transport.checked),
   };
 }
 
 function renderDetails(candidate, shiftLabel) {
-  const details = document.querySelector('#candidateDetails');
+  const detailsContainer = document.querySelector('#candidateDetails');
 
-  const rows = Object.entries(candidate).map(([key, value]) => {
-    let displayValue = value;
+  detailsContainer.innerHTML = Object.entries(candidate)
+    .map(([key, value]) => {
+      const label = detailLabels[key] || key;
+      let displayValue = value;
 
-    if (key === 'shift_preference') {
-      displayValue = shiftLabel || shiftLabels[value] || 'Не указано';
-    }
+      if (key === 'shift_preference') {
+        displayValue = shiftLabel || shiftLabels[value] || 'Не указано';
+      }
 
-    if (key === 'has_certifications') {
-      displayValue = value ? 'Да' : 'Нет';
-    }
+      if (key === 'education_level') {
+        displayValue = educationLabels[value] || value;
+      }
 
-    if (key === 'years_experience') {
-      displayValue = `${value} лет`;
-    }
+      if (key === 'family_status') {
+        displayValue = familyLabels[value] || value;
+      }
 
-    if (key === 'age') {
-      displayValue = `${value} лет`;
-    }
+      if (key === 'housing_type') {
+        displayValue = housingLabels[value] || value;
+      }
 
-    if (key === 'commute_time_minutes') {
-      displayValue = `${value} минут`;
-    }
+      if (key === 'has_transport') {
+        displayValue = value ? 'Да' : 'Нет';
+      }
 
-    if (key === 'salary_expectation') {
-      displayValue = `${currency(value)} ₽`;
-    }
+      if (key === 'has_certifications') {
+        displayValue = value ? 'Да' : 'Нет';
+      }
 
-    return `
-      <tr>
-        <td>${detailLabels[key] || key}</td>
-        <td>${displayValue}</td>
-      </tr>
-    `;
-  });
+      if (key === 'previous_turnovers') {
+        displayValue = `${value}`;
+      }
 
-  details.innerHTML = rows.join('');
+      if (key === 'years_experience') {
+        displayValue = `${value} лет`;
+      }
+
+      if (key === 'age') {
+        displayValue = `${value} лет`;
+      }
+
+      if (key === 'commute_time_minutes') {
+        displayValue = `${value} минут`;
+      }
+
+      if (key === 'salary_expectation') {
+        displayValue = `${currency(value)} ₽`;
+      }
+
+      return `
+        <tr>
+          <td>${label}</td>
+          <td>${displayValue}</td>
+        </tr>
+      `;
+    })
+    .join('');
 }
 
 function renderRiskFactors(result) {
@@ -210,6 +267,22 @@ function renderRiskFactors(result) {
 
   container.innerHTML = `
     <ul class="risk-list">
+      ${factors.map((factor) => `<li>${factor}</li>`).join('')}
+    </ul>
+  `;
+}
+
+function renderPositiveFactors(result) {
+  const container = document.querySelector('#positiveFactors');
+  const factors = result.positive_factors || [];
+
+  if (!factors.length) {
+    container.textContent = 'Значимых положительных факторов не найдено.';
+    return;
+  }
+
+  container.innerHTML = `
+    <ul class="risk-list positive-list">
       ${factors.map((factor) => `<li>${factor}</li>`).join('')}
     </ul>
   `;
@@ -252,6 +325,7 @@ function renderResult(result) {
   decision.className = `decision-box ${theme.badge}`;
 
   renderRiskFactors(result);
+  renderPositiveFactors(result);
   renderDetails(result.candidate, result.shift_label);
 }
 
@@ -357,7 +431,7 @@ function renderUploadResult(result) {
   container.innerHTML = `
     <h3>${result.full_name}</h3>
     <p>${result.raw_summary}</p>
-    <p><strong>Retention Score:</strong> ${percent(result.retention_score)}</p>
+    <p><strong>Прогноз удержания:</strong> ${percent(result.retention_score)}</p>
     <p>
       <strong>Факторы риска:</strong>
       ${(result.risk_factors || []).join(', ') || 'не обнаружены'}
@@ -424,7 +498,7 @@ function renderHistory(items) {
         <article class="history-item">
           <h3>${item.full_name}</h3>
           <p class="muted">${item.raw_summary}</p>
-          <p><strong>Retention Score:</strong> ${percent(item.retention_score)}</p>
+          <p><strong>Прогноз удержания:</strong> ${percent(item.retention_score)}</p>
           <p><strong>Факторы риска:</strong> ${risks}</p>
         </article>
       `;
@@ -460,6 +534,11 @@ function setInitialCandidate() {
     shift_preference: 2,
     salary_expectation: 90000,
     has_certifications: true,
+    education_level: 1,
+    previous_turnovers: 1,
+    family_status: 0,
+    housing_type: 1,
+    has_transport: true,
   };
 
   state.currentCandidate = candidate;

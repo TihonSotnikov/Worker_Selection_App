@@ -860,6 +860,15 @@ body::before {
   box-shadow: 0 0 18px rgba(245, 158, 11, 0.42);
 }
 
+.positive-factors {
+  border-color: rgba(34, 197, 94, 0.22);
+}
+
+.positive-list li::before {
+  background: var(--success);
+  box-shadow: 0 0 18px rgba(34, 197, 94, 0.42);
+}
+
 @media (max-width: 1040px) {
   .hero,
   .layout-grid,
@@ -983,5 +992,98 @@ body::before {
 
   .radial-score strong {
     font-size: 32px;
+  }
+}
+
+@media (min-width: 921px) {
+  .layout-grid {
+    grid-template-columns: 420px minmax(0, 1fr);
+    gap: 22px;
+  }
+
+  .controls-card {
+    padding: 18px 20px;
+  }
+
+  .controls-card .card-header {
+    margin-bottom: 12px;
+  }
+
+  .controls-card .eyebrow {
+    margin-bottom: 5px;
+    font-size: 11px;
+  }
+
+  .controls-card h2 {
+    font-size: 22px;
+    line-height: 1.15;
+  }
+
+  .preset-list {
+    gap: 8px;
+  }
+
+  .preset-list .button {
+    min-height: 38px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.25;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .controls-card hr {
+    margin: 13px 0;
+  }
+
+  .candidate-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px 12px;
+  }
+
+  .candidate-form label {
+    min-width: 0;
+    gap: 5px;
+    font-size: 13px;
+    line-height: 1.25;
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .candidate-form input,
+  .candidate-form select {
+    min-width: 0;
+    min-height: 35px;
+    padding: 7px 9px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.2;
+  }
+
+  .candidate-form select {
+    white-space: normal;
+    text-overflow: clip;
+  }
+
+  .candidate-form .checkbox-row {
+    grid-column: span 2;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    min-height: 28px;
+    font-size: 13px;
+  }
+
+  .candidate-form .checkbox-row input {
+    width: 17px;
+    height: 17px;
+  }
+
+  .candidate-form .button.wide {
+    grid-column: span 2;
+    min-height: 39px;
+    margin-top: 5px;
+    font-size: 14px;
   }
 }

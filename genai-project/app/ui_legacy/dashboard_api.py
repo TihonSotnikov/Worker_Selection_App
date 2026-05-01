@@ -9,6 +9,12 @@ from fastapi import APIRouter, HTTPException, status
 from app.core.enums import ShiftPreference
 from app.ml_legacy.generator import generate_if_needed
 from app.ml_legacy.predictor import RetentionPredictor
+from app.ml_legacy.feature_contract import (
+    FEATURE_COLS,
+    EDUCATION_LABELS,
+    FAMILY_LABELS,
+    HOUSING_LABELS,
+)
 
 
 router = APIRouter(tags=["dashboard"])
@@ -35,15 +41,7 @@ SHIFT_LABELS = {
 }
 
 
-REQUIRED_CANDIDATE_FIELDS = {
-    "skills_verified_count",
-    "years_experience",
-    "age",
-    "commute_time_minutes",
-    "shift_preference",
-    "salary_expectation",
-    "has_certifications",
-}
+REQUIRED_CANDIDATE_FIELDS = set(FEATURE_COLS)
 
 
 def project_root() -> Path:
@@ -53,9 +51,12 @@ def project_root() -> Path:
 def load_dataset(data_path: Path) -> pd.DataFrame:
     df = pd.read_csv(data_path)
 
-    if "age" not in df.columns:
+    required_columns = set(FEATURE_COLS + ["retention"])
+    missing_columns = required_columns - set(df.columns)
+
+    if missing_columns:
         raise ValueError(
-            "В data/train_dataset.csv нет колонки age. "
+            f"В data/train_dataset.csv нет колонок {sorted(missing_columns)}. "
             "Перегенерируй датасет через app/ml_legacy/generator.py"
         )
 
@@ -79,6 +80,11 @@ def row_to_candidate(row: pd.Series) -> dict[str, Any]:
         "shift_preference": int(row["shift_preference"]),
         "salary_expectation": int(row["salary_expectation"]),
         "has_certifications": bool(row["has_certifications"]),
+        "education_level": int(row["education_level"]),
+        "previous_turnovers": int(row["previous_turnovers"]),
+        "family_status": int(row["family_status"]),
+        "housing_type": int(row["housing_type"]),
+        "has_transport": bool(row["has_transport"]),
     }
 
 
@@ -99,6 +105,11 @@ def build_edge_case_candidate() -> dict[str, Any]:
         ),
         "salary_expectation": rng.randint(50000, 110000),
         "has_certifications": rng.choice([True, False]),
+        "education_level": 1,
+        "previous_turnovers": 1,
+        "family_status": 0,
+        "housing_type": 1,
+        "has_transport": rng.choice([True, False]),
     }
 
 
@@ -142,15 +153,23 @@ def get_status_payload() -> dict[str, Any]:
         **boot_info,
         "dataset_rows": int(len(dataset)),
         "available_presets": [
-            "ideal",
-            "problematic",
-            "borderline",
+            "green",
+            "yellow",
+            "red",
             "edge",
         ],
     }
 
 
 def sample_candidate(category: str) -> dict[str, Any]:
+    category_aliases = {
+        "green": "ideal",
+        "yellow": "borderline",
+        "red": "problematic",
+    }
+
+    category = category_aliases.get(category, category)
+
     predictor, dataset, _ = get_dashboard_runtime()
 
     if category == "edge":
@@ -203,7 +222,7 @@ def sample_candidate(category: str) -> dict[str, Any]:
 
     else:
         raise ValueError(
-            "Неизвестный пресет. Доступны: ideal, problematic, borderline, edge"
+             "Неизвестный пресет. Доступны: green, yellow, red, edge"
         )
 
     if subset.empty:
@@ -237,6 +256,11 @@ def normalize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
         "shift_preference": int(candidate["shift_preference"]),
         "salary_expectation": int(candidate["salary_expectation"]),
         "has_certifications": bool(candidate["has_certifications"]),
+        "education_level": int(candidate["education_level"]),
+        "previous_turnovers": int(candidate["previous_turnovers"]),
+        "family_status": int(candidate["family_status"]),
+        "housing_type": int(candidate["housing_type"]),
+        "has_transport": bool(candidate["has_transport"]),
     }
 
     if normalized["age"] < 18:
@@ -248,11 +272,21 @@ def normalize_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     if normalized["shift_preference"] not in SHIFT_LABELS:
         raise ValueError("Некорректное значение shift_preference")
 
+    if normalized["education_level"] not in EDUCATION_LABELS:
+        raise ValueError("Некорректное значение education_level")
+
+    if normalized["family_status"] not in FAMILY_LABELS:
+        raise ValueError("Некорректное значение family_status")
+
+    if normalized["housing_type"] not in HOUSING_LABELS:
+        raise ValueError("Некорректное значение housing_type")
+
     for key in (
         "skills_verified_count",
         "years_experience",
         "commute_time_minutes",
         "salary_expectation",
+        "previous_turnovers",
     ):
         if normalized[key] < 0:
             raise ValueError(f"Поле {key} не может быть отрицательным")
@@ -267,6 +301,7 @@ def predict_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
 
     prediction = predictor.predict_retention(normalized)
     risk_factors = predictor.explain_prediction(normalized)
+    positive_factors = predictor.explain_positive_factors(normalized)
 
     display_risk_factors = [
         factor for factor in risk_factors if factor != "Требуется уточнение опыта"
@@ -301,9 +336,13 @@ def predict_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
         "requires_review": bool(prediction["requires_review"]),
         "risk_factors": risk_factors,
         "display_risk_factors": display_risk_factors,
+        "positive_factors": positive_factors,
         "status_text": status_text,
         "zone_text": zone_text,
         "shift_label": SHIFT_LABELS[normalized["shift_preference"]],
+        "education_label": EDUCATION_LABELS[normalized["education_level"]],
+        "family_label": FAMILY_LABELS[normalized["family_status"]],
+        "housing_label": HOUSING_LABELS[normalized["housing_type"]],
         "uncertainty_low": float(prediction.get("uncertainty_low", 0.0)),
         "uncertainty_high": float(prediction.get("uncertainty_high", 1.0)),
         "uncertainty_margin": float(prediction.get("uncertainty_margin", 0.08)),
