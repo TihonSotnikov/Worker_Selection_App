@@ -6,8 +6,10 @@ Synthetic Data Generator (Rule-Based)
 
 import pandas as pd
 import random
-import os
 import math
+import os
+
+from app.ml_legacy.feature_contract import FEATURE_COLS
 from app.core.enums import ShiftPreference
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +50,11 @@ class SyntheticDataGenerator:
         shift_preference: ShiftPreference,
         salary_expectation: int,
         has_certifications: bool,
+        education_level: int,
+        previous_turnovers: int,
+        family_status: int,
+        housing_type: int,
+        has_transport: bool,
     ) -> float:
         score = 0.0
 
@@ -106,6 +113,38 @@ class SyntheticDataGenerator:
         if skills_verified_count < 3 and years_experience < 2:
             score += 0.6
 
+        # Частые увольнения / смены работы
+        if previous_turnovers > 3:
+            score += 2.4
+        elif previous_turnovers >= 2:
+            score += 1.0
+        elif previous_turnovers == 0:
+            score -= 0.3
+
+        # Семья + ночные смены
+        has_kids = family_status in {2, 3}
+
+        if has_kids and shift_preference == ShiftPreference.NIGHT_ONLY:
+            score += 1.3
+
+        # Транспорт и дорога
+        if not has_transport and commute_time_minutes > 60:
+            score += 1.0
+        elif has_transport and commute_time_minutes <= 60:
+            score -= 0.3
+
+        # Жильё
+        if housing_type == 2:
+            score += 0.6
+        elif housing_type == 0:
+            score -= 0.3
+
+        # Образование
+        if education_level in {1, 2}:
+            score -= 0.4
+        elif education_level == 0 and skills_verified_count < 3:
+            score += 0.4
+
         # Небольшой джиттер вместо грубого flip 5%
         score += self.rng.uniform(-0.25, 0.25)
 
@@ -124,6 +163,32 @@ class SyntheticDataGenerator:
             salary_expectation = self.rng.randint(30000, 150000)
             has_certifications = self.rng.random() > 0.7
 
+            education_level = self.rng.choices(
+                population=[0, 1, 2, 3],
+                weights=[20, 40, 25, 15],
+                k=1,
+            )[0]
+
+            previous_turnovers = self.rng.choices(
+                population=[0, 1, 2, 3, 4, 5],
+                weights=[25, 30, 20, 12, 8, 5],
+                k=1,
+            )[0]
+
+            family_status = self.rng.choices(
+                population=[0, 1, 2, 3],
+                weights=[35, 25, 30, 10],
+                k=1,
+            )[0]
+
+            housing_type = self.rng.choices(
+                population=[0, 1, 2, 3],
+                weights=[25, 45, 15, 15],
+                k=1,
+            )[0]
+
+            has_transport = self.rng.random() > 0.45
+
             risk_score = self._compute_risk_score(
                 skills_verified_count=skills_verified_count,
                 years_experience=years_experience,
@@ -132,6 +197,11 @@ class SyntheticDataGenerator:
                 shift_preference=shift_preference,
                 salary_expectation=salary_expectation,
                 has_certifications=has_certifications,
+                education_level=education_level,
+                previous_turnovers=previous_turnovers,
+                family_status=family_status,
+                housing_type=housing_type,
+                has_transport=has_transport,
             )
 
             # Чем выше risk_score, тем ниже вероятность удержания
@@ -146,6 +216,11 @@ class SyntheticDataGenerator:
                 "shift_preference": shift_preference.value,
                 "salary_expectation": salary_expectation,
                 "has_certifications": int(has_certifications),
+                "education_level": education_level,
+                "previous_turnovers": previous_turnovers,
+                "family_status": family_status,
+                "housing_type": housing_type,
+                "has_transport": int(has_transport),
                 "retention": retention,
             }
 
@@ -180,16 +255,24 @@ def generate_if_needed():
         try:
             df = pd.read_csv(data_path)
 
-            if "age" not in df.columns:
-                print("В датасете нет age. Перегенерация...")
+            required_columns = set(FEATURE_COLS + ["retention"])
+            missing_columns = required_columns - set(df.columns)
+
+            if missing_columns:
+                print(
+                    f"В датасете нет колонок {sorted(missing_columns)}. "
+                    "Перегенерация..."
+                )
                 should_generate = True
             else:
                 invalid_rows = df[
                     df["years_experience"] > (df["age"] - 18).clip(lower=0)
                 ]
+
                 if not invalid_rows.empty:
                     print(
-                        f"Найдено {len(invalid_rows)} нереалистичных строк. Перегенерация..."
+                        f"Найдено {len(invalid_rows)} нереалистичных строк. "
+                        "Перегенерация..."
                     )
                     should_generate = True
         except Exception:

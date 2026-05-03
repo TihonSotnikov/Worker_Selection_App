@@ -6,14 +6,19 @@ import logging
 import subprocess
 import sys
 import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 TESTING = os.getenv("TESTING", "0") == "1"
 
 from app.api.database import init_db
 from app.api.routes import router as api_router
+from app.ui_legacy.dashboard_api import router as dashboard_router
 from app.ml_legacy.generator import generate_if_needed
 from app.ml_legacy.predictor import train_if_needed
 from app.core.config import settings
@@ -22,35 +27,8 @@ if not TESTING:
     from app.ai.extractor import extractor
 
 
-def start_dashboard():
-    """
-    Запуск Streamlit дашборда в отдельном процессе
-    """
-
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        dashboard_path = os.path.join(base_dir, "app", "ui_legacy", "dashboard.py")
-
-        if not os.path.exists(dashboard_path):
-            print(f"ERROR: Файл дашборда не найден по пути: {dashboard_path}")
-            return
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "streamlit",
-            "run",
-            dashboard_path,
-            "--server.port=8501",
-            "--server.address=0.0.0.0",
-        ]
-
-        subprocess.Popen(cmd)
-        print(" Dashboard started: http://localhost:8501")
-
-    except Exception as e:
-        print(f" Dashboard error: {e}")
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = BASE_DIR / "app" / "frontend"
 
 
 @asynccontextmanager
@@ -84,8 +62,6 @@ async def lifespan(app: FastAPI):
                 "Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger
             )
 
-        start_dashboard()
-
     yield
 
     print("Executing shutdown logic...")
@@ -116,6 +92,18 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix="/api")
+app.include_router(dashboard_router, prefix="/api")
+
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def frontend_index():
+    return FileResponse(FRONTEND_DIR / "index.html")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=os.getenv("RELOAD", "0") == "1",
+    )

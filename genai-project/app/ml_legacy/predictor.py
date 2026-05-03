@@ -5,13 +5,15 @@ ML Model & Interpretability
 2. Реализовать функцию explain_prediction(vector), возвращающую топ-факторы риска
 """
 
-import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.model_selection import train_test_split
+from typing import Dict, List
 import catboost as cb
+import pandas as pd
 import pickle
 import os
-from typing import Dict, List
+
+from app.ml_legacy.feature_contract import FEATURE_COLS, FEATURE_DEFAULTS, FAMILY_WITH_KIDS
 from app.core.enums import ShiftPreference
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +26,9 @@ class RetentionPredictor:
     def __init__(self):
         self.model = None
         self.feature_names = None
+        self._prediction_cache = {}
+        self._explain_cache = {}
+        self._positive_cache = {}
 
     def _map_risk_level(self, retention_probability: float) -> str:
         if retention_probability >= 0.7:
@@ -34,18 +39,60 @@ class RetentionPredictor:
     
     def _detect_requires_review(self, features: Dict) -> bool:
         return features.get("years_experience", 0) <= 0
+    
+    def _estimate_uncertainty_band(
+        self,
+        retention_probability: float,
+        features: Dict,
+        requires_review: bool = False,
+    ) -> dict:
+        """
+        UX-коридор неопределённости.
+
+        Это НЕ строгий статистический доверительный интервал.
+        Это честный интерфейсный индикатор: чем ближе кандидат к спорной зоне
+        или чем хуже полнота данных, тем шире коридор.
+        """
+
+        if requires_review:
+            margin = 0.12
+        elif 0.4 <= retention_probability < 0.7:
+            margin = 0.08
+        elif retention_probability < 0.4:
+            margin = 0.06
+        else:
+            margin = 0.05
+
+        return {
+            "uncertainty_low": max(0.0, retention_probability - margin),
+            "uncertainty_high": min(1.0, retention_probability + margin),
+            "uncertainty_margin": margin,
+            "uncertainty_note": (
+                "Ориентировочный коридор неопределённости. "
+                "Это не строгий статистический доверительный интервал, "
+                "а UX-подсказка для HR-интерпретации результата."
+            ),
+        }
 
     def _prepare_feature_df(self, features: Dict) -> pd.DataFrame:
-        features = dict(features)
+        features = {
+            **FEATURE_DEFAULTS,
+            **dict(features),
+        }
+
         required_features = set(self.feature_names or [])
         missing = required_features - set(features.keys())
+
         if missing:
             raise ValueError(f"Отсутствуют признаки для модели: {sorted(missing)}")
 
         return pd.DataFrame([features])[self.feature_names]
 
     def _rule_based_weighted_risks(self, features: Dict) -> List[str]:
-        features = dict(features)
+        features = {
+            **FEATURE_DEFAULTS,
+            **dict(features),
+        }
 
         scored_risks = []
 
@@ -107,6 +154,45 @@ class RetentionPredictor:
             "Много навыков без подтверждающих сертификатов",
         )
 
+        add(
+            features.get("previous_turnovers", 0) > 3,
+            3.2,
+            "Частая смена прошлых мест работы",
+        )
+
+        add(
+            2 <= features.get("previous_turnovers", 0) <= 3,
+            1.6,
+            "Есть история частой смены работы",
+        )
+
+        add(
+            features.get("family_status") in FAMILY_WITH_KIDS
+            and features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value,
+            2.5,
+            "Семейная нагрузка при выборе ночных смен",
+        )
+
+        add(
+            not features.get("has_transport", False)
+            and features.get("commute_time_minutes", 0) > 60,
+            2.0,
+            "Нет личного транспорта при долгой дороге",
+        )
+
+        add(
+            features.get("housing_type") == 2,
+            1.2,
+            "Нестабильные жилищные условия",
+        )
+
+        add(
+            features.get("education_level") == 0
+            and features.get("skills_verified_count", 0) < 3,
+            1.0,
+            "Низкий уровень образования при малом числе подтверждённых навыков",
+        )
+
         scored_risks.sort(key=lambda x: x[0], reverse=True)
 
         result = []
@@ -123,6 +209,11 @@ class RetentionPredictor:
     def _format_feature_risk(
         self, feature_name: str, value, features: Dict
     ) -> str | None:
+        features = {
+            **FEATURE_DEFAULTS,
+            **dict(features),
+        }
+
         if feature_name == "commute_time_minutes":
             if value > 120:
                 return "Очень длинная дорога до работы"
@@ -176,8 +267,51 @@ class RetentionPredictor:
                 return "Возраст усиливает риск при ночном графике"
             return None
 
+        if feature_name == "previous_turnovers":
+            if value > 3:
+                return "Частая смена прошлых мест работы"
+            if value >= 2:
+                return "Есть история частой смены работы"
+            return None
+
+        if feature_name == "family_status":
+            if (
+                value in FAMILY_WITH_KIDS
+                and features.get("shift_preference") == ShiftPreference.NIGHT_ONLY.value
+            ):
+                return "Семейная нагрузка при выборе ночных смен"
+            return None
+
+        if feature_name == "housing_type":
+            if value == 2:
+                return "Нестабильные жилищные условия"
+            return None
+
+        if feature_name == "has_transport":
+            if (
+                not bool(value)
+                and features.get("commute_time_minutes", 0) > 60
+            ):
+                return "Нет личного транспорта при долгой дороге"
+            return None
+
+        if feature_name == "education_level":
+            if value == 0 and features.get("skills_verified_count", 0) < 3:
+                return "Низкий уровень образования при малом числе подтверждённых навыков"
+            return None
+
         return None
 
+    def _feature_cache_key(self, features: Dict) -> tuple:
+        prepared = {
+            **FEATURE_DEFAULTS,
+            **dict(features),
+        }
+
+        names = self.feature_names or FEATURE_COLS
+
+        return tuple((name, prepared.get(name)) for name in names)
+    
     def train_model(self, data_path=DEFAULT_DATA_PATH):
 
         if not os.path.exists(data_path):
@@ -187,7 +321,7 @@ class RetentionPredictor:
 
         if "age" not in df.columns:
             raise ValueError("В датасете нет колонки age")
-        
+
         invalid_rows = df[df["years_experience"] > (df["age"] - 18).clip(lower=0)]
 
         if not invalid_rows.empty:
@@ -196,15 +330,15 @@ class RetentionPredictor:
                  "Перегенерируй train_dataset.csv"
             )
 
-        feature_cols = [
-            "skills_verified_count",
-            "years_experience",
-            "age",
-            "commute_time_minutes",
-            "shift_preference",
-            "salary_expectation",
-            "has_certifications",
-        ]
+        feature_cols = FEATURE_COLS
+
+        missing_columns = set(feature_cols + ["retention"]) - set(df.columns)
+
+        if missing_columns:
+            raise ValueError(
+                f"В датасете нет колонок {sorted(missing_columns)}. "
+                "Перегенерируй train_dataset.csv"
+            )
 
         X = df[feature_cols]
         y = df["retention"]
@@ -222,6 +356,7 @@ class RetentionPredictor:
             loss_function="Logloss",
             verbose=False,
             random_state=42,
+            allow_writing_files=False,
         )
 
         self.model.fit(X_train, y_train, eval_set=(X_test, y_test))
@@ -238,12 +373,16 @@ class RetentionPredictor:
         return self.model
 
     def predict_retention(self, features: Dict):
-        if not self.model:
+        if self.model is None:
             raise ValueError("Model is not loaded or trained.")
+
+        cache_key = self._feature_cache_key(features)
+
+        if cache_key in self._prediction_cache:
+            return dict(self._prediction_cache[cache_key])
 
         feature_df = self._prepare_feature_df(features)
         retention_prob = float(self.model.predict_proba(feature_df)[0, 1])
-
         requires_review = self._detect_requires_review(features)
 
         # Edge Case вшит в бизнес-логику:
@@ -253,20 +392,45 @@ class RetentionPredictor:
         else:
             risk_level = self._map_risk_level(retention_prob)
 
-        return {
+        uncertainty = self._estimate_uncertainty_band(
+            retention_probability=retention_prob,
+            features=features,
+            requires_review=requires_review,
+        )
+
+        result = {
             "retention_probability": retention_prob,
             "will_stay": bool(retention_prob > 0.5),
             "risk_level": risk_level,
             "requires_review": requires_review,
+            **uncertainty,
         }
 
+        self._prediction_cache[cache_key] = dict(result)
+
+        return result
+
     def explain_prediction(self, features: Dict) -> List[str]:
-        features = dict(features)
+        features = {
+            **FEATURE_DEFAULTS,
+            **dict(features),
+        }
 
         requires_review = self._detect_requires_review(features)
+        cache_key = self._feature_cache_key(features)
 
-        if not self.model or not self.feature_names:
-            return self._rule_based_weighted_risks(features)
+        if cache_key in self._explain_cache:
+            return list(self._explain_cache[cache_key])
+
+        if self.model is None or not self.feature_names:
+            result = self._rule_based_weighted_risks(features)
+
+            if requires_review and "Требуется уточнение опыта" not in result:
+                result.insert(0, "Требуется уточнение опыта")
+
+            final_result = result[:3]
+            self._explain_cache[cache_key] = list(final_result)
+            return final_result
 
         try:
             feature_df = self._prepare_feature_df(features)
@@ -276,6 +440,7 @@ class RetentionPredictor:
             shap_row = shap_values[0][:-1]  # последний элемент — bias
 
             contributions = []
+
             for feature_name, shap_value in zip(self.feature_names, shap_row):
                 # Берем только негативные вклады в класс "удержится"
                 if shap_value >= -1e-6:
@@ -295,30 +460,45 @@ class RetentionPredictor:
 
                 model_risks = []
                 seen = set()
+
                 for _, message in contributions:
                     if message not in seen:
                         model_risks.append(message)
                         seen.add(message)
+
                     if len(model_risks) == 3:
                         break
 
                 fallback_risks = self._rule_based_weighted_risks(features)
 
                 result = []
+
                 for risk in model_risks + fallback_risks:
                     if risk not in result:
                         result.append(risk)
+
                     if len(result) == 3:
                         break
-                
+
                 if requires_review and "Требуется уточнение опыта" not in result:
                     result.insert(0, "Требуется уточнение опыта")
+
                 if result:
-                    return result[:3]
+                    final_result = result[:3]
+                    self._explain_cache[cache_key] = list(final_result)
+                    return final_result
+
         # SHAP-объяснение — best effort.
         # Если модельная интерпретация не сработала из-за проблем с признаками
         # или внутренней ошибкой CatBoost, возвращаем устойчивый rule-based fallback.
-        except (ValueError, KeyError, TypeError, IndexError, AttributeError, cb.CatBoostError) as e:
+        except (
+            ValueError,
+            KeyError,
+            TypeError,
+            IndexError,
+            AttributeError,
+            cb.CatBoostError,
+        ) as e:
             print(f"Explain fallback activated: {e}")
 
         result = self._rule_based_weighted_risks(features)
@@ -326,7 +506,49 @@ class RetentionPredictor:
         if requires_review and "Требуется уточнение опыта" not in result:
             result.insert(0, "Требуется уточнение опыта")
 
-        return result[:3]
+        final_result = result[:3]
+        self._explain_cache[cache_key] = list(final_result)
+
+        return final_result
+
+    def explain_positive_factors(self, features: Dict) -> List[str]:
+        features = {
+            **FEATURE_DEFAULTS,
+            **dict(features),
+        }
+
+        cache_key = self._feature_cache_key(features)
+
+        if cache_key in self._positive_cache:
+            return list(self._positive_cache[cache_key])
+
+        positives = []
+
+        if features.get("skills_verified_count", 0) >= 7:
+            positives.append("Много подтверждённых навыков")
+
+        if features.get("years_experience", 0) >= 5:
+            positives.append("Хороший релевантный опыт")
+
+        if features.get("commute_time_minutes", 999) <= 40:
+            positives.append("Короткая дорога до работы")
+
+        if features.get("has_certifications", False):
+            positives.append("Есть подтверждающие сертификаты")
+
+        if features.get("has_transport", False):
+            positives.append("Есть личный транспорт")
+
+        if features.get("previous_turnovers", 99) <= 1:
+            positives.append("Нет частой смены рабочих мест")
+
+        if features.get("housing_type") == 0:
+            positives.append("Стабильные жилищные условия")
+
+        result = positives[:3]
+        self._positive_cache[cache_key] = list(result)
+
+        return result
 
     def save_model(self, path=DEFAULT_MODEL_PATH):
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -366,15 +588,23 @@ class RetentionPredictor:
 
 
 def train_if_needed():
-    data_path = DEFAULT_MODEL_PATH
+    model_path = DEFAULT_MODEL_PATH
+    data_path = DEFAULT_DATA_PATH
 
-    print(f"Checking model at: {data_path}")
+    print(f"Checking model at: {model_path}")
 
-    if not os.path.exists(data_path) or os.path.getsize(data_path) == 0:
+    model = RetentionPredictor()
+    model_loaded = model.load_model(model_path)
+
+    needs_retrain = (
+        not model_loaded
+        or model.feature_names != FEATURE_COLS
+    )
+
+    if needs_retrain:
         print("Training model...")
-        model = RetentionPredictor()
-        model.train_model()
-        model.save_model(data_path)
+        model.train_model(data_path)
+        model.save_model(model_path)
         print("Model is trained and saved.")
     else:
-        print("Model is trained yet.")
+        print("Model is already trained and feature-compatible.")
