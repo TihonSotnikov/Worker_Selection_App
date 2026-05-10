@@ -3,16 +3,21 @@ import uvicorn
 import gc
 import asyncio
 import logging
-import subprocess
-import sys
 import os
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 TESTING = os.getenv("TESTING", "0") == "1"
 
@@ -26,7 +31,6 @@ from app.core.config import settings
 if not TESTING:
     from app.ai.extractor import extractor
 
-
 BASE_DIR = Path(__file__).resolve().parent
 FRONTEND_DIR = BASE_DIR / "app" / "frontend"
 
@@ -35,18 +39,15 @@ FRONTEND_DIR = BASE_DIR / "app" / "frontend"
 async def lifespan(app: FastAPI):
     """
     Менеджер жизненного цикла приложения.
-
-    Код до yield выполняется при старте сервера.
-    Код после yield выполняется при остановки сервера.
     """
 
-    print("Executing startup logic...")
+    logger.info("Executing startup logic...")
 
     if not os.path.exists(settings.UPLOAD_DIR):
-        print(f"Creating upload directory: {settings.UPLOAD_DIR}")
+        logger.info(f"Creating upload directory: {settings.UPLOAD_DIR}")
         os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
-    print("Initializing DB...")
+    logger.info("Initializing DB...")
     app.state.logger = logging.getLogger("uvicorn")
     init_db()
 
@@ -64,9 +65,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    print("Executing shutdown logic...")
+    logger.info("Executing shutdown logic...")
     async with app.state.gpu_lock:
-        if app.state.extractor:
+        if hasattr(app.state, "extractor") and app.state.extractor:
             app.state.logger.info("Releasing extractor resources...")
             del app.state.extractor
             gc.collect()
@@ -80,9 +81,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ============== NOTE ================
-# В MVP разрешаем всем все (по сути).
-# ============== NOTE ================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -101,8 +99,10 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 def frontend_index():
     return FileResponse(FRONTEND_DIR / "index.html")
 
+
 if __name__ == "__main__":
-    uvicorn.run("main:app",
+    uvicorn.run(
+        "main:app",
         host="127.0.0.1",
         port=8000,
         reload=os.getenv("RELOAD", "0") == "1",

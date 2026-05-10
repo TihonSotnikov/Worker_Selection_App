@@ -1,6 +1,9 @@
+import logging
 from typing import Tuple, List
 
 from app.core.schemas import CandidateVector
+
+logger = logging.getLogger(__name__)
 
 
 async def ml_predict(vector: CandidateVector) -> Tuple[float, List[str]]:
@@ -43,7 +46,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, List[str]]:
         return float(prediction["retention_probability"]), risk_factors
 
     except Exception as e:
-        print(f"ML модуль недоступен: {e}")
+        logger.error(f"ML модуль недоступен или ошибка предсказания: {e}")
 
         score = 0.85
         risks = []
