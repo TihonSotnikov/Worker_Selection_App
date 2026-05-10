@@ -1,7 +1,5 @@
 import torch
 import logging
-
-# import
 from time import time
 from transformers import pipeline
 from lmformatenforcer import JsonSchemaParser
@@ -9,60 +7,31 @@ from lmformatenforcer.integrations.transformers import (
     build_transformers_prefix_allowed_tokens_fn,
 )
 from app.core.schemas import CandidateSummary
-from colorama import init
-
-init(autoreset=True)
 
 SYSTEM_PROMPT_EXTRACT = """
-Ты - HR-ассистент, помогающий с отбором кандидатов на работу.
-Твоя задача - анализировать резюме и сопроводительные письма,
-и на их основе составлять отчёт в формате json по модели CandidateSummary:
-```
-class ShiftPreference(IntEnum):
-    DAY_ONLY = 0    # Только дневные смены
-    NIGHT_ONLY = 1  # Только ночные смены
-    ANY = 2         # Готов работать в любое время
+Ты - HR-ассистент. Твоя задача - извлечь данные из резюме в JSON CandidateSummary:
+- full_name: ФИО кандидата (если нет - "Не указано")
+- raw_summary: кратко (2-3 предл., <150 симв.)
+- vector:
+    - skills_verified_count: кол-во подтвержденных навыков
+    - years_experience: опыт работы в годах
+    - age: возраст кандидата (число)
+    - commute_time_minutes: время в пути в минутах (если нет - 45)
+    - shift_preference: 0 (день), 1 (ночь), 2 (любой)
+    - salary_expectation: зарплатные ожидания (число)
+    - has_certifications: true/false (есть ли сертификаты/корочки)
+    - education_level: 0 (среднее), 1 (спец), 2 (колледж), 3 (высшее)
+    - previous_turnovers: количество прошлых мест работы/увольнений
+    - family_status: 0 (нет), 1 (брак), 2 (дети), 3 (один родитель)
+    - housing_type: 0 (свое), 1 (аренда), 2 (общага), 3 (родители)
+    - has_transport: true (есть машина/права), false (нет)
 
-class CandidateVector:
-    skills_verified_count: int
-    years_experience: float
-    commute_time_minutes: int
-    shift_preference: ShiftPreference 
-    salary_expectation: int
-    has_certifications: bool
-
-class CandidateSummary:
-    full_name: str    # ФИО кандидата
-    raw_summary: str  # Краткое резюме от LLM (<150 символов)
-    vector: CandidateVector
-```
-
-Если имя не указано, напиши "Не указано".
-Резюме "raw_summary" должно быть кратким!
-2-3 предложения, только важная информация.
-Строки текста пиши на русском языке.
-Не добавляй ничего лишнего, соблюдай синтаксис JSON.
+Пиши на русском языке. Не добавляй ничего лишнего.
 """
-
 
 class extractor:
     """
-    AI-модуль для извлечения структурированных данных кандидата из текстового резюме.
-
-    Attributes
-    ----------
-    _pipeline : transformers.Pipeline
-        Модель трансформера для генерации текста.
-    _parser : JsonSchemaParser
-        Парсер для обеспечения соответствия вывода заданной JSON-схеме.
-    _prefix_func : callable
-        Функция для ограничения токенов вывода в соответствии с JSON-схемой.
-
-    Methods
-    -------
-    __call__(prompt, *args, **kwds)
-        Вызывает модель трансформера с ограничением вывода по схеме.
-
+    AI-модуль для извлечения 12 структурированных признаков кандидата.
     """
 
     def __init__(self, model_name: str, logger: logging.Logger = None, *args, **kwargs):
@@ -80,14 +49,10 @@ class extractor:
         self._sum_prefix_func = build_transformers_prefix_allowed_tokens_fn(
             self._pipeline.tokenizer, self._sum_parser
         )
-        if logger:
-            logger.info(f"Extractor initialized.")
         self._logger = logger
 
     def __call__(self, prompt, *args, **kwds):
         tm = time()
-        if self._logger:
-            self._logger.info("Starting extraction process.")
         sum_json_str = self._pipeline(
             [
                 [
@@ -102,45 +67,21 @@ class extractor:
             return_full_text=False,
             **kwds,
         )[-1]
+        
         sum_json_str = str.strip(sum_json_str[0]["generated_text"], "\n ")
         sum_json_str = sum_json_str.replace("\t", "  ").replace("\n", " ")
-        if self._logger:
-            self._logger.info("LLM output received.")
 
         try:
             candidate_summary = CandidateSummary.model_validate_json(sum_json_str)
-            inference_time = time() - tm
             if self._logger:
-                self._logger.info(
-                    f"LLM output successfully parsed as CandidateSummary JSON. (Took {inference_time:.1f} sec.)"
-                )
+                self._logger.info(f"Extracted data for: {candidate_summary.full_name}")
         except Exception as e:
             if self._logger:
-                self._logger.error(
-                    f"Error parsing LLM output as CandidateSummary JSON.\nString being parsed:\n{sum_json_str}"
-                )
+                self._logger.error(f"JSON Parsing error: {e}")
             raise e
+            
         return (
             candidate_summary.full_name,
             candidate_summary.raw_summary,
             candidate_summary.vector,
         )
-
-
-def get_vram_info(device_name: str):
-    """
-    Get total and free VRAM gigabytes by device name.
-
-    Returns
-    -------
-    Tuple[float, float]
-        Total and free VRAM value for `device_name`.
-    """
-    if not torch.cuda.is_available():
-        return 0, 0
-    device = torch.device(device_name)
-    props = torch.cuda.get_device_properties(device)
-    total_vram = props.total_memory / (1024**3)
-    free_vram, _ = torch.cuda.mem_get_info(device)
-    free_vram = free_vram / (1024**3)
-    return total_vram, free_vram

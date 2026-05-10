@@ -5,87 +5,37 @@ from app.core.enums import ShiftPreference
 
 class CandidateVector(BaseModel):
     """
-    Чистый вектор данных кандидата для ML-модели.
-
-    Это структура данных, которая передается от AI-модуля (экстрактора) в ML-модуль (предиктора).
-
-    Attributes
-    ----------
-    skills_verified_count : int
-        Количество подтвержденных навыков.
-    years_experience : float
-        Опыт работы в годах.
-    commute_time_minutes : int
-        Время пути до работы в минутах.
-    shift_preference : ShiftPreference
-        Предпочитаемый график.
-    salary_expectation : int
-        Ожидаемая зарплата.
-    has_certifications : bool
-        Наличие сертификатов/корочек.
+    Полный вектор данных кандидата (12 признаков) для ML-модели.
     """
 
-    skills_verified_count: int = Field(
-        ..., ge=0, description="Количество подтвержденных навыков"
-    )
-    years_experience: float = Field(..., ge=0.0, description="Опыт работы в годах")
-    commute_time_minutes: int = Field(
-        ..., ge=0, description="Время пути до работы в минутах"
-    )
-    shift_preference: ShiftPreference = Field(..., description="Предпочитаемый график")
-    salary_expectation: int = Field(..., ge=0, description="Ожидаемая зарплата")
-    has_certifications: bool = Field(..., description="Наличие сертификатов/корочек")
+    skills_verified_count: int = Field(..., ge=0)
+    years_experience: float = Field(..., ge=0.0)
+    age: int = Field(..., ge=18, le=80)
+    commute_time_minutes: int = Field(..., ge=0)
+    shift_preference: ShiftPreference = Field(...)
+    salary_expectation: int = Field(..., ge=0)
+    has_certifications: bool = Field(...)
+    
+    # Новые признаки из расширенного контракта
+    education_level: int = Field(..., ge=0, le=3, description="0:Среднее, 1:Спец, 2:Колледж, 3:Высшее")
+    previous_turnovers: int = Field(..., ge=0, description="Кол-во смен работы")
+    family_status: int = Field(..., ge=0, le=3, description="0:Нет, 1:Брак, 2:Дети, 3:Один")
+    housing_type: int = Field(..., ge=0, le=3, description="0:Свое, 1:Аренда, 2:Общага, 3:Родители")
+    has_transport: bool = Field(..., description="Наличие личного транспорта")
 
 
 class CandidateSummary(BaseModel):
-    """
-    Суммаризация от LLM модели.
-
-    Attributes
-    ----------
-    full_name : str
-        Полное имя кандидата.
-    raw_summary : str
-        Краткое резюме, сгенерированное LLM.
-    """
-
-    full_name: str = Field(..., description="ФИО кандидата")
-    raw_summary: str = Field(..., description="Краткое резюме, сгенерированное LLM")
+    """Суммаризация от LLM модели."""
+    full_name: str
+    raw_summary: str
     vector: CandidateVector
 
 
 class CandidateResult(BaseModel):
-    """
-    Финальный результат анализа кандидата.
-
-    Объединяет данные, сгенерированные LLM, вектор признаков и результаты предсказания ML-модели.
-    Структура данных, которая возвращается на frontend.
-
-    Attributes
-    ----------
-    id : str
-        Уникальный идентификатор кандидата (UUID).
-    full_name : str
-        Полное имя кандидата.
-    raw_summary : str
-        Краткое резюме, сгенерированное LLM.
-    vector : CandidateVector
-        Структурированный вектор признаков кандидата, используемый ML-моделью.
-    retention_score : float
-        Вероятность удержания кандидата в компании. Значение в диапазоне [0.0, 1.0].
-    risk_factors : List[str]
-        Список текстовых факторов риска, выявленных моделью или логикой анализа.
-    """
-
-    id: str = Field(..., description="Уникальный ID кандидата (UUID)")
-    full_name: str = Field(..., description="ФИО кандидата")
-    raw_summary: str = Field(..., description="Краткое резюме, сгенерированное LLM")
-
+    """Финальный результат анализа."""
+    id: str
+    full_name: str
+    raw_summary: str
     vector: CandidateVector
-
-    retention_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Вероятность удержания [0.0 — 1.0]"
-    )
-    risk_factors: List[str] = Field(
-        default_factory=list, description="Список текстовых пояснений рисков"
-    )
+    retention_score: float
+    risk_factors: List[str]
