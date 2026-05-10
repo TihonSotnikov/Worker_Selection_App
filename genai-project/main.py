@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
     app.state.gpu_lock = asyncio.Lock()
     if TESTING:
-        app.state.extractor = object()
+        app.state.extractor = lambda x: x
     else:
         async with app.state.gpu_lock:
             app.state.extractor = extractor(
