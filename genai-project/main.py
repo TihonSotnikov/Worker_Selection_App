@@ -23,9 +23,9 @@ TESTING = os.getenv("TESTING", "0") == "1"
 
 from app.api.database import init_db
 from app.api.routes import router as api_router
-from app.ui_legacy.dashboard_api import router as dashboard_router
-from app.ml_legacy.generator import generate_if_needed
-from app.ml_legacy.predictor import train_if_needed
+from app.ui.dashboard_api import router as dashboard_router
+from app.ml.generator import generate_if_needed
+from app.ml.predictor import train_if_needed
 from app.core.config import settings
 
 if not TESTING:

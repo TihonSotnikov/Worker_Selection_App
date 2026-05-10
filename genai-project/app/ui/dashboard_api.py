@@ -7,9 +7,9 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.enums import ShiftPreference
-from app.ml_legacy.generator import generate_if_needed
-from app.ml_legacy.predictor import RetentionPredictor
-from app.ml_legacy.feature_contract import (
+from app.ml.generator import generate_if_needed
+from app.ml.predictor import RetentionPredictor
+from app.ml.feature_contract import (
     FEATURE_COLS,
     EDUCATION_LABELS,
     FAMILY_LABELS,
@@ -57,7 +57,7 @@ def load_dataset(data_path: Path) -> pd.DataFrame:
     if missing_columns:
         raise ValueError(
             f"В data/train_dataset.csv нет колонок {sorted(missing_columns)}. "
-            "Перегенерируй датасет через app/ml_legacy/generator.py"
+            "Перегенерируй датасет через app.ml.generator.py"
         )
 
     invalid_rows = df[df["years_experience"] > (df["age"] - 18).clip(lower=0)]
@@ -117,7 +117,7 @@ def build_edge_case_candidate() -> dict[str, Any]:
 def get_dashboard_runtime():
     root = project_root()
 
-    model_path = root / "app" / "ml_legacy" / "model.pkl"
+    model_path = root / "app" / "ml" / "model.pkl"
     data_path = root / "data" / "train_dataset.csv"
 
     dataset_existed = data_path.exists()

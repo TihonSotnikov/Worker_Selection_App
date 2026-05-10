@@ -22,7 +22,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, List[str]]:
     """
 
     try:
-        from app.ml_legacy.predictor import RetentionPredictor
+        from app.ml.predictor import RetentionPredictor
 
         predictor = RetentionPredictor()
         predictor.load_model()

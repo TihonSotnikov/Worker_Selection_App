@@ -15,7 +15,6 @@ plotly
 scikit-learn
 catboost
 
-streamlit
 faster-whisper
 
 transformers==4.51.3
