@@ -3,7 +3,8 @@ from sqlmodel import Session
 from typing import List
 
 from app.api.database import get_session
-from app.api.services import process_candidate, get_all_candidates
+from app.services.analyze_service import process_candidate
+from app.services.storage_service import get_all_candidates
 from app.core.schemas import CandidateResult
 
 # APIRouter позволяет вынести маршруты в отдельный файл, чтобы не захламлять main.py.
@@ -31,24 +32,18 @@ async def analyze_candidate(
     ----------
     file : UploadFile
         Файл, отправленный клиентом через multipart/form-data.
-        Может быть аудио (.wav, .mp3) или текст/pdf.
-        FastAPI автоматически обрабатывает поток байтов.
     session : Session
         Активная сессия базы данных.
-        Внедряется автоматически через Dependency Injection (Depends).
 
     Returns
     -------
     CandidateResult
-        Объект с результатами анализа, включая:
-        - Данные кандидата
-        - Вектор признаков
-        - Оценку удержания (Retention Score)
+        Объект с результатами анализа.
 
     Raises
     ------
     HTTPException (500)
-        Если произошла внутренняя ошибка сервера (ошибка записи файла, сбой БД, etc).
+        Если произошла внутренняя ошибка сервера.
     """
     try:
         model_ext = request.app.state.extractor
@@ -57,9 +52,6 @@ async def analyze_candidate(
         return result
 
     except Exception as e:
-        # ======================= NOTE ==========================
-        # скорее всего нужен логировщик (logger.error) в релизе.
-        # ======================= NOTE ==========================
         print(f"Error processing candidate: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -73,8 +65,6 @@ async def analyze_candidate(
 def get_history(session: Session = Depends(get_session)) -> List[CandidateResult]:
     """
     Эндпоинт для выгрузки списка всех ранее проанализированных кандидатов.
-
-    Используется для отображения таблицы на дашборде рекрутера.
 
     Parameters
     ----------
