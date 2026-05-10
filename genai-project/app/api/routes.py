@@ -1,11 +1,12 @@
 import logging
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Request
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Request, Response
 from sqlmodel import Session
 from typing import List
 
 from app.api.database import get_session
 from app.services.analyze_service import process_candidate
 from app.services.storage_service import get_all_candidates
+from app.services import interview_service
 from app.core.schemas import CandidateResult
 
 logger = logging.getLogger(__name__)
@@ -54,4 +55,30 @@ def get_history(session: Session = Depends(get_session)) -> List[CandidateResult
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not fetch history",
+        )
+
+
+@router.get("/interview/start", summary="Начать интервью")
+async def start_interview():
+    """Возвращает первый вопрос интервью."""
+    return await interview_service.get_interview_question(0)
+
+
+@router.post("/interview/submit_answer", summary="Отправить ответ на вопрос")
+async def submit_answer(step: int, transcript: str):
+    """Принимает текст ответа и возвращает следующий вопрос."""
+    return await interview_service.process_interview_answer(step, transcript)
+
+
+@router.post("/synthesize", summary="Синтез речи (TTS)")
+async def synthesize_text(text: str):
+    """Преобразует текст в аудио-файл (WAV)."""
+    try:
+        audio_bytes = interview_service.tts_engine.synthesize(text)
+        return Response(content=audio_bytes, media_type="audio/wav")
+    except Exception as e:
+        logger.exception(f"TTS synthesis failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Synthesis error"
         )
