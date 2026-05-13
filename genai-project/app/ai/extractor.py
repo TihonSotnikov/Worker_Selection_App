@@ -1,18 +1,32 @@
 import torch
-import logging
+from logging import getLogger
 
 # import
 from time import time
-from transformers import pipeline
+from transformers import pipeline, BitsAndBytesConfig
 from lmformatenforcer import JsonSchemaParser
 from lmformatenforcer.integrations.transformers import (
     build_transformers_prefix_allowed_tokens_fn,
 )
-from app.core.schemas import CandidateSummary
 from colorama import init
 
-init(autoreset=True)
+from app.core.schemas import CandidateSummary
+from app.core.config import settings
 
+init(autoreset=True)
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
+QUANTIZATION_CONFIG = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.float16
+)
+MODEL_KWARGS = {
+    "quantization_config": QUANTIZATION_CONFIG,
+    "device_map": device,
+    "dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
+}
 SYSTEM_PROMPT_EXTRACT = """
 Ты - HR-ассистент, помогающий с отбором кандидатов на работу.
 Твоя задача - анализировать резюме и сопроводительные письма,
@@ -65,23 +79,22 @@ class extractor:
 
     """
 
-    def __init__(self, model_name: str, logger: logging.Logger = None, *args, **kwargs):
-        if logger:
-            logger.info(f"Initializing extractor with model {model_name}...")
+    def __init__(self, model_name: str, *args, **kwargs):
+        logger = getLogger(settings.LOGGER)
+        logger.info(f"Initializing extractor with model {model_name}...")
+
         self._pipeline = pipeline(
             "text-generation",
             model=model_name,
-            device_map="auto",
-            dtype="auto",
+            model_kwargs=MODEL_KWARGS,
             *args,
             **kwargs,
         )
         self._sum_parser = JsonSchemaParser(CandidateSummary.model_json_schema())
         self._sum_prefix_func = build_transformers_prefix_allowed_tokens_fn(
-            self._pipeline.tokenizer, self._sum_parser
+            self._pipeline.tokenizer, self._sum_parser # type: ignore
         )
-        if logger:
-            logger.info(f"Extractor initialized.")
+        logger.info(f"Extractor initialized on {device}.")
         self._logger = logger
 
     def __call__(self, prompt, *args, **kwds):
@@ -102,7 +115,7 @@ class extractor:
             return_full_text=False,
             **kwds,
         )[-1]
-        sum_json_str = str.strip(sum_json_str[0]["generated_text"], "\n ")
+        sum_json_str = str(sum_json_str[0]["generated_text"]).strip("\n ")
         sum_json_str = sum_json_str.replace("\t", "  ").replace("\n", " ")
         if self._logger:
             self._logger.info("LLM output received.")

@@ -22,6 +22,7 @@ from app.ui_legacy.dashboard_api import router as dashboard_router
 from app.ml_legacy.generator import generate_if_needed
 from app.ml_legacy.predictor import train_if_needed
 from app.core.config import settings
+from app.core.state import set_app_state
 
 if not TESTING:
     from app.ai.extractor import extractor
@@ -40,6 +41,8 @@ async def lifespan(app: FastAPI):
     Код после yield выполняется при остановки сервера.
     """
 
+    logger = logging.getLogger("uvicorn")
+    app.state.logger = logger
     print("Executing startup logic...")
 
     if not os.path.exists(settings.UPLOAD_DIR):
@@ -47,7 +50,6 @@ async def lifespan(app: FastAPI):
         os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 
     print("Initializing DB...")
-    app.state.logger = logging.getLogger("uvicorn")
     init_db()
 
     generate_if_needed()

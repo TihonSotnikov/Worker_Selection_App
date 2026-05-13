@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "not-set"
     DATABASE_URL: str = "sqlite:///./Worker_Selection_App.db"
     UPLOAD_DIR: str = "/tmp/Worker_Selection_App_uploads"
+    LOGGER: str = "uvicorn"
 
     model_config = ConfigDict(env_file=".env")
 

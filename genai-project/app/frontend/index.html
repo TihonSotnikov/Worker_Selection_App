@@ -60,6 +60,7 @@
         <button class="tab is-active" data-tab="demo">ML демо</button>
         <button class="tab" data-tab="upload">Анализ резюме</button>
         <button class="tab" data-tab="history">История</button>
+        <button class="tab" data-tab="dialog">Диалог</button>
       </nav>
 
       <main>
@@ -347,6 +348,31 @@
             <div id="historyList" class="history-list muted">
               История ещё не загружена.
             </div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="tab-dialog">
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">Диалог с рекрутёром</p>
+                <h2>Попробуйте себя в роли кандидата</h2>
+              </div>
+            </div>
+
+            <p class="muted">
+              Введите вопрос, связанный с данными кандидата, и получите ответ от модели.
+              Это может помочь в интерпретации результатов и выявлении скрытых факторов.
+            </p>
+
+            <div class="audio-container">
+              <audio id="remoteAudio" autoplay></audio>
+              <button class="button primary" id="startInterview" data-status="0" type="button">
+                Начать диалог вопроса
+              </button>
+            </div>
+
+            <div id="dialogResult" class="api-result hidden"></div>
           </div>
         </section>
       </main>

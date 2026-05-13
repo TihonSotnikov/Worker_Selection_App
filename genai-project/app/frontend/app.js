@@ -1,3 +1,8 @@
+
+const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+const wsHost = window.location.host;
+const wsBaseUrl = `${wsProtocol}//${wsHost}/api/ws`;
+
 const state = {
   currentCandidate: null,
   currentPresetLabel: 'Кандидат',
@@ -476,6 +481,142 @@ function setupUpload() {
   });
 }
 
+let isChatActive = false;
+let remoteAudioWs = null;
+let peerConnection = null;
+let localStream = null;
+
+const remoteAudio = document.getElementById('remoteAudio');
+const dialogButton = document.getElementById('startInterview');
+const remoteAudioWsUrl = `${wsBaseUrl}/webrtc`
+const rtcConfig = {
+    iceServers:[{ urls: "stun:stun.l.google.com:19302" }]
+};
+
+function teardownVoice() {
+    console.log("Очистка старых ресурсов...");
+
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+
+    if (peerConnection) {
+        peerConnection.onicecandidate = null;
+        peerConnection.ontrack = null;
+        peerConnection.close();
+        peerConnection = null;
+    }
+
+    if (remoteAudioWs) {
+        remoteAudioWs.onopen = null;
+        remoteAudioWs.onmessage = null;
+        remoteAudioWs.onerror = null;
+        remoteAudioWs.onclose = null;
+        
+        if (remoteAudioWs.readyState !== WebSocket.CLOSED) {
+            remoteAudioWs.close();
+        }
+        remoteAudioWs = null;
+    }
+}
+
+async function setupVoice() {
+    try {
+        teardownVoice();
+        
+        remoteAudioWs = new WebSocket(remoteAudioWsUrl);
+
+        await new Promise((resolve, reject) => {
+          remoteAudioWs.onopen = () => resolve();
+          remoteAudioWs.onerror = (err) => reject(new Error("Ошибка подключения WebSocket"));
+          remoteAudioWs.onclose = () => reject(new Error("WebSocket закрылся до установки соединения"));
+        });
+
+        console.log("WebSocket подключен");
+
+        remoteAudioWs.onmessage = async (event) => {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'answer') {
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
+          } else if (data.type === 'ice-candidate') {
+            await peerConnection.addIceCandidate(data.candidate);
+          }
+        };
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true /* {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          } */
+        });
+        peerConnection = new RTCPeerConnection();
+        
+        localStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, localStream);
+        });
+
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate && remoteAudioWs.readyState === WebSocket.OPEN) {
+            remoteAudioWs.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+          }
+        };
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        remoteAudioWs.send(JSON.stringify({
+          type: 'offer',
+          sdp: offer.sdp
+        }));
+
+        console.log("Звонок начат");
+
+        remoteAudioWs.onclose = () => {
+          showToast("Связь с сервером потеряна");
+          teardownVoice();
+        };
+
+        peerConnection.ontrack = (event) => {
+          console.log("Получен трек:", event.streams[0]);
+          remoteAudio.srcObject = event.streams[0];
+          remoteAudio.play().catch(e => console.error("Ошибка автовоспроизведения:", e));
+        };
+
+    } catch (error) {
+        console.error("Не удалось запустить голос:", error);
+        showToast("Не удалось запустить голосовую связь");
+        teardownVoice();
+    }
+}
+
+async function voiceButtonHandler(event) {
+  event.preventDefault();
+
+  if (!isChatActive) {
+    await setupVoice();
+
+    isChatActive = true;
+    dialogButton.textContent = 'Завершить интервью';
+    dialogButton.classList.remove('primary');
+    dialogButton.classList.add('recording');
+  }
+
+  else {
+    teardownVoice();
+    isChatActive = false;
+    dialogButton.textContent = 'Начать интервью';
+    dialogButton.classList.remove('recording');
+    dialogButton.classList.add('primary');
+  }
+}
+
+function setupInterview() {
+  dialogButton.addEventListener('click', voiceButtonHandler);
+}
+
 function renderHistory(items) {
   const container = document.querySelector('#historyList');
 
@@ -550,6 +691,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setupDemo();
   setupUpload();
   setupHistory();
+  setupInterview();
   setInitialCandidate();
   loadStatus();
 });

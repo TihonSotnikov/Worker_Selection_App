@@ -11,6 +11,7 @@
 
   --primary: #7c3aed;
   --primary-hover: #8b5cf6;
+  --recording: #db2727;
 
   --success: #22c55e;
   --warning: #eab308;
@@ -242,6 +243,11 @@ hr {
 
 .button.ghost {
   background: transparent;
+}
+
+.button.recording {
+  background: var(--recording);
+  box-shadow: 0 16px 36px rgba(124, 58, 237, 0.24);
 }
 
 .button.wide {
