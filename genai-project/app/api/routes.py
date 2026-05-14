@@ -8,12 +8,16 @@ from typing import List
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.sdp import candidate_from_sdp
 from aiortc.mediastreams import MediaStreamTrack
+from transformers import TextIteratorStreamer
 
 from app.api.database import get_session
 from app.api.services import process_candidate, get_all_candidates
 from app.core.schemas import CandidateResult
 from app.core.config import settings
+from app.ai.models import gpu_lock
 from app.rtc.rtc import OutgoingAudioTrack, consume_incoming_audio
+from app.ai.models import llm_model, llm_tokenizer, gen_config, tts_model
+from app.ai.interviewer import Interviewer
 
 # APIRouter позволяет вынести маршруты в отдельный файл, чтобы не захламлять main.py.
 router = APIRouter()
@@ -63,8 +67,7 @@ async def analyze_candidate(
 
     try:
         model_ext = request.app.state.extractor
-        lock = request.app.state.gpu_lock
-        result = await process_candidate(file, session, model_ext, lock)
+        result = await process_candidate(file, session, model_ext, gpu_lock)
         return result
 
     except Exception as e:
@@ -118,15 +121,43 @@ async def webrtc_endpoint(websocket: WebSocket):
 
     await websocket.accept()
     pc = RTCPeerConnection()
+    interviewer = Interviewer(llm_model, llm_tokenizer)
 
     outgoing_track = OutgoingAudioTrack()
     pc.addTrack(outgoing_track)
     background_tasks = set()
+
+    async def put_to_interviewer_queue(text: str):
+        content = json.dumps({"type": "interview-echo", "content": text})
+        await websocket.send_text(content)
+        interviewer.input_queue.put_nowait(text)
+    
+    async def handle_interviewer_response(text: str):
+        content = json.dumps({"type": "interview-response", "content": text})
+        await websocket.send_text(content)
+        if "<stop>" in text:
+            content = json.dumps({"type": "interview-end", "content": text.replace('<stop>', '')})
+            await websocket.send_text(content)
+            return
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        if pc.connectionState == "connected":
+            logger.info("Связь установлена.")
+            interviewer.input_queue.put_nowait("[SYSTEM] Представься и начни интервью.")
+            task = asyncio.create_task(interviewer.stream_from_queue(handle_interviewer_response))
+            background_tasks.add(task)
+            task.add_done_callback(background_tasks.discard)
+        elif pc.connectionState in ["failed", "closed"]:
+            logger.info("Соединение разорвано или не удалось.")
     
     @pc.on("track")
     def on_track(track: MediaStreamTrack):
         if track.kind == "audio":
-            task = asyncio.create_task(consume_incoming_audio(track, outgoing_track.queue))
+            task = asyncio.create_task(consume_incoming_audio(
+                track,
+                outgoing_track.queue,
+                put_to_interviewer_queue))
             background_tasks.add(task)
             task.add_done_callback(background_tasks.discard)
                
@@ -144,6 +175,8 @@ async def webrtc_endpoint(websocket: WebSocket):
             "type": pc.localDescription.type
         }))
 
+        # tts_instance = SileroTTSProcessor()
+
         # Основной цикл
         while True:
             data = await websocket.receive_text()
@@ -153,8 +186,6 @@ async def webrtc_endpoint(websocket: WebSocket):
                 if message.get("type") == "ice-candidate":
                     candidate_info = message.get("candidate")
                     
-                    # Проверяем, что кандидат существует и не является пустой строкой
-                    # (браузер шлет пустую строку, чтобы сказать "кандидаты закончились")
                     if candidate_info and candidate_info.get("candidate"):
                         candidate = candidate_from_sdp(candidate_info["candidate"])
                         candidate.sdpMid = candidate_info.get("sdpMid")

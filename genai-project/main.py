@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from transformers import pipeline, Pipeline, BitsAndBytesConfig
 
 TESTING = os.getenv("TESTING", "0") == "1"
 
@@ -23,9 +24,10 @@ from app.ml_legacy.generator import generate_if_needed
 from app.ml_legacy.predictor import train_if_needed
 from app.core.config import settings
 from app.core.state import set_app_state
+from app.ai.models import llm_model, llm_tokenizer, gpu_lock
 
 if not TESTING:
-    from app.ai.extractor import extractor
+    from app.ai.extractor import Extractor
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -55,19 +57,14 @@ async def lifespan(app: FastAPI):
     generate_if_needed()
     train_if_needed()
 
-    app.state.gpu_lock = asyncio.Lock()
-    if TESTING:
-        app.state.extractor = object()
-    else:
-        async with app.state.gpu_lock:
-            app.state.extractor = extractor(
-                "Qwen/Qwen3-4B-Instruct-2507", logger=app.state.logger
-            )
+    app.state.extractor = Extractor(
+        llm_model, llm_tokenizer
+    )
 
     yield
 
     print("Executing shutdown logic...")
-    async with app.state.gpu_lock:
+    async with gpu_lock:
         if app.state.extractor:
             app.state.logger.info("Releasing extractor resources...")
             del app.state.extractor

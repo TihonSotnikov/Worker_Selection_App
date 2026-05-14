@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR : str
         Путь в файловой системе для временного хранения загруженных резюме.
         По умолчанию: "/tmp/Worker_Selection_App_uploads".
+    LOGGER : str
+        Имя логгера для конфигурации логирования.
     """
 
     OPENAI_API_KEY: str = "not-set"
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "/tmp/Worker_Selection_App_uploads"
     LOGGER: str = "uvicorn"
 
-    model_config = ConfigDict(env_file=".env")
+    model_config = ConfigDict(env_file=".env") # type: ignore
 
 
 # Создаётся единственный экземпляр, который импортируется по всему приложению.

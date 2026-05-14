@@ -9,7 +9,7 @@ dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 # dtype = torch.float32
 
 
-class transcriber:
+class Transcriber:
     def __init__(self, model_name: str, *args, **kwargs):
         self._model = WhisperModel(model_name)
         # self._pipeline = pipeline(

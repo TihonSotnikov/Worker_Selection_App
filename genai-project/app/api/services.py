@@ -12,8 +12,8 @@ from app.core.config import settings
 from app.core.schemas import CandidateVector, CandidateResult
 from app.core.enums import ShiftPreference
 from app.api.models_db import CandidateTable
-from app.ai.extractor import extractor
-from app.ai.transcriber import transcriber
+from app.ai.extractor import Extractor
+from app.ai.transcriber import Transcriber
 
 
 async def save_upload_file(upload_file: UploadFile) -> Path:
@@ -51,7 +51,7 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
 
 
 async def ai_extract(
-    file_path: Path, ext: extractor, gpu_lock: asyncio.Lock = None
+    file_path: Path, ext: Extractor, gpu_lock: asyncio.Lock = None
 ) -> Tuple[str, str, CandidateVector]:
     """AI экстракция данных из резюме."""
 
@@ -59,7 +59,7 @@ async def ai_extract(
 
     if extension in [".wav", ".mp3"]:
         try:
-            stt_model = transcriber("medium")
+            stt_model = Transcriber("medium")
             segments, info = stt_model(str(file_path))
             resume_text = " ".join([segment.text for segment in segments])
         except Exception:
@@ -131,7 +131,7 @@ async def ml_predict(vector: CandidateVector) -> Tuple[float, list[str]]:
 async def process_candidate(
     upload_file: UploadFile,
     session: Session,
-    model_ext: extractor,
+    model_ext: Extractor,
     gpu_lock: asyncio.Lock = None,
 ) -> CandidateResult:
     """

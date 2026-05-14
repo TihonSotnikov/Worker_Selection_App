@@ -2,19 +2,16 @@ import torch
 from logging import getLogger
 
 # import
-import outlines
 from time import time
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextGenerationPipeline, PreTrainedTokenizer, PreTrainedModel, BatchEncoding
-# from lmformatenforcer import JsonSchemaParser
-# from lmformatenforcer.integrations.transformers import (
-#     build_transformers_prefix_allowed_tokens_fn,
-# )
+from transformers import TextGenerationPipeline
+from lmformatenforcer import JsonSchemaParser
+from lmformatenforcer.integrations.transformers import (
+    build_transformers_prefix_allowed_tokens_fn,
+)
 from colorama import init
 
 from app.core.schemas import CandidateSummary
 from app.core.config import settings
-from app.ai.models import gen_config
-from outlines.inputs import Chat
 
 init(autoreset=True)
 
@@ -71,13 +68,15 @@ class Extractor:
 
     """
 
-    def __init__(self, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, *args, **kwargs):
+    def __init__(self, pipeline: TextGenerationPipeline, *args, **kwargs):
         logger = getLogger(settings.LOGGER)
         # logger.info(f"Initializing extractor with model {model_name}...")
 
-        self._model = outlines.models.transformers.from_transformers(model, tokenizer)
-        self._tokenizer = tokenizer
-        self._generator = outlines.Generator(self._model, CandidateSummary)
+        self._pipeline = pipeline
+        self._sum_parser = JsonSchemaParser(CandidateSummary.model_json_schema())
+        self._sum_prefix_func = build_transformers_prefix_allowed_tokens_fn(
+            self._pipeline.tokenizer, self._sum_parser # type: ignore
+        )
         # logger.info(f"Extractor initialized on {device}.")
         self._logger = logger
 
@@ -86,14 +85,22 @@ class Extractor:
         if self._logger:
             self._logger.info("Starting extraction process.")
         
-        messages = Chat([
-            {"role": "system", "content": SYSTEM_PROMPT_EXTRACT},
-            {"role": "user", "content": prompt},
-        ])
-        
-        output = self._generator(messages) # type: ignore
+        sum_json_str = self._pipeline(
+            [
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT_EXTRACT},
+                    {"role": "user", "content": prompt + " /no_think"},
+                ]
+            ],
+            *args,
+            max_new_tokens=2048,
+            prefix_allowed_tokens_fn=self._sum_prefix_func,
+            repetition_penalty=1.15,
+            return_full_text=False,
+            **kwds,
+        )[-1]
 
-        sum_json_str = str(output).strip("\n ")
+        sum_json_str = str(sum_json_str[0]["generated_text"]).strip("\n ")
         sum_json_str = sum_json_str.replace("\t", "  ").replace("\n", " ")
         if self._logger:
             self._logger.info("LLM output received.")

@@ -488,6 +488,7 @@ let localStream = null;
 
 const remoteAudio = document.getElementById('remoteAudio');
 const dialogButton = document.getElementById('startInterview');
+const dialogBox = document.getElementById('dialogBox')
 const remoteAudioWsUrl = `${wsBaseUrl}/webrtc`
 const rtcConfig = {
     iceServers:[{ urls: "stun:stun.l.google.com:19302" }]
@@ -525,6 +526,7 @@ async function setupVoice() {
     try {
         teardownVoice();
         
+        dialogBox.innerHTML = ""
         remoteAudioWs = new WebSocket(remoteAudioWsUrl);
 
         await new Promise((resolve, reject) => {
@@ -542,6 +544,19 @@ async function setupVoice() {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
           } else if (data.type === 'ice-candidate') {
             await peerConnection.addIceCandidate(data.candidate);
+          } else if (data.type === 'interview-echo') {
+            const p = document.createElement('p')
+            p.innerText = `Вы: — ${data.content}`
+            dialogBox.appendChild(p)
+          } else if (data.type === 'interview-response') {
+            const p = document.createElement('p')
+            p.innerText = `Интервьюер: — ${data.content}`
+            dialogBox.appendChild(p)
+          } else if (data.type === 'interview-end') {
+            teardownVoice()
+            dialogButton.textContent = 'Начать интервью';
+            dialogButton.classList.remove('recording')
+            dialogButton.classList.add('primary')
           }
         };
 
@@ -602,6 +617,7 @@ async function voiceButtonHandler(event) {
     dialogButton.textContent = 'Завершить интервью';
     dialogButton.classList.remove('primary');
     dialogButton.classList.add('recording');
+    dialogBox.classList.remove('hidden')
   }
 
   else {
