@@ -1,12 +1,21 @@
 import asyncio
-from pathlib import Path
-from typing import Tuple
 import uuid
 import json
+import logging
+from pathlib import Path
+from typing import Tuple
+from logging import getLogger
 
-from fastapi import UploadFile, HTTPException
+from fastapi import UploadFile, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.concurrency import run_in_threadpool
 from sqlmodel import Session, select
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer
+from aiortc.sdp import candidate_from_sdp
+from aiortc.mediastreams import MediaStreamTrack
+from transformers import TextIteratorStreamer
+from app.rtc.rtc import OutgoingAudioTrack, consume_incoming_audio
+from app.ai.models import llm_model, llm_tokenizer, gen_config, tts_model
+from app.ai.interviewer import Interviewer
 
 from app.core.config import settings
 from app.core.schemas import CandidateVector, CandidateResult
@@ -14,6 +23,16 @@ from app.core.enums import ShiftPreference
 from app.api.models_db import CandidateTable
 from app.ai.extractor import Extractor
 from app.ai.transcriber import Transcriber
+from app.core.types import AdvancedLock
+from app.ai.models import gpu_lock
+from app.ai.interviewer import DIALOG_INIT_PROMPT
+
+
+logger = getLogger('uvicorn')
+
+# logging.basicConfig(level=logging.DEBUG)
+# logging.getLogger('aioice').setLevel(logging.DEBUG)
+# logging.getLogger('aiortc').setLevel(logging.DEBUG)
 
 
 async def save_upload_file(upload_file: UploadFile) -> Path:
@@ -37,7 +56,7 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
     Функция асинхронная для оптимизации IO операций FastAPI через event loop.
     """
 
-    file_extension = Path(upload_file.filename).suffix
+    file_extension = Path(upload_file.filename).suffix # type: ignore
     unique_filename = f"{uuid.uuid4()}{file_extension}"
 
     file_path = Path(settings.UPLOAD_DIR) / unique_filename
@@ -51,8 +70,8 @@ async def save_upload_file(upload_file: UploadFile) -> Path:
 
 
 async def ai_extract(
-    file_path: Path, ext: Extractor, gpu_lock: asyncio.Lock = None
-) -> Tuple[str, str, CandidateVector]:
+    file_path: Path, ext: Extractor
+        ) -> Tuple[str, str, CandidateVector]:
     """AI экстракция данных из резюме."""
 
     extension = file_path.suffix.lower()
@@ -132,7 +151,6 @@ async def process_candidate(
     upload_file: UploadFile,
     session: Session,
     model_ext: Extractor,
-    gpu_lock: asyncio.Lock = None,
 ) -> CandidateResult:
     """
     Полный цикл обработки кандидата.
@@ -163,7 +181,7 @@ async def process_candidate(
 
     file_path = await save_upload_file(upload_file)
 
-    full_name, raw_summary, vector = await ai_extract(file_path, model_ext, gpu_lock)
+    full_name, raw_summary, vector = await ai_extract(file_path, model_ext)
 
     retention_score, risk_factors = await ml_predict(vector)
 
@@ -214,7 +232,7 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
     """
 
     candidates = session.exec(
-        select(CandidateTable).order_by(CandidateTable.created_at.desc())
+        select(CandidateTable).order_by(CandidateTable.created_at.desc()) # type: ignore
     ).all()
 
     results = []
@@ -239,3 +257,215 @@ def get_all_candidates(session: Session) -> list[CandidateResult]:
         results.append(result)
 
     return results
+
+
+async def handle_webrtc_session(websocket: WebSocket):
+
+    if gpu_lock.locked():
+        await websocket.accept()
+        await websocket.close(status.WS_1013_TRY_AGAIN_LATER, "Кто-то уже проходит интервью.")
+        return
+    
+    async with gpu_lock:
+        await websocket.accept()
+
+        rtc_config = RTCConfiguration(
+            iceServers=[
+                RTCIceServer(urls=[
+                    "stun:stun.cloudflare.com:3478",
+                    "stun:stun.sipnet.ru:3478",
+                    "stun:stun.nextcloud.com:443",
+                ])
+            ]
+        )
+        pc = RTCPeerConnection(configuration=rtc_config)
+        interviewer = Interviewer(llm_model, llm_tokenizer)
+        turn_lock = AdvancedLock()
+        
+        # Блокировка для предотвращения RuntimeError при одновременной записи в WebSocket
+        ws_lock = asyncio.Lock()
+
+        outgoing_track = OutgoingAudioTrack()
+        pc.addTrack(outgoing_track)
+        background_tasks: set[asyncio.Task] = set()
+        
+        send_buffer = ""            # Буфер для выявления <stop>
+        full_current_response = ""  # Вся текущая реплика
+        is_interview_over = False   # Флаг конца диалога
+
+        async def safe_ws_send(message: dict):
+            """Безопасная отправка в сокет, защищающая от race conditions."""
+            async with ws_lock:
+                try:
+                    await websocket.send_text(json.dumps(message))
+                except Exception as e:
+                    logger.error(f"Ошибка отправки в WebSocket: {e}")
+
+        async def put_to_interviewer_queue(text: str):
+            if is_interview_over:
+                return
+            
+            if turn_lock.locked():
+                logger.info(f"Бот говорит. Игнорируем реплику пользователя: {text}")
+                return
+            
+            while not interviewer.input_queue.empty():
+                try:
+                    interviewer.input_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+
+            await safe_ws_send({"type": "interview-chunk", "content": text})
+            interviewer.input_queue.put_nowait(text)
+        
+        async def handle_interviewer_response(chunk: str, is_final: bool):
+            nonlocal send_buffer, full_current_response, is_interview_over
+            
+            if is_interview_over:
+                if is_final:
+                    if full_current_response.strip():
+                        await safe_ws_send({
+                            "type": "interview-finalize",
+                            "content": f"Интервьюер: — {full_current_response.strip()}"
+                        })
+                    await safe_ws_send({"type": "interview-end"})
+                return
+
+            send_buffer += chunk
+            full_current_response += chunk
+            
+            if "<stop>" in send_buffer:
+                is_interview_over = True
+                
+                send_buffer = send_buffer.split("<stop>")[0]
+                full_current_response = full_current_response.split("<stop>")[0]
+                
+                if send_buffer:
+                    await safe_ws_send({"type": "interview-chunk", "content": send_buffer})
+                    send_buffer = ""
+            else:
+                hold_len = 0
+                for i in range(1, 6):
+                    if send_buffer.endswith("<stop>"[:i]):
+                        hold_len = i
+                        break
+                
+                if hold_len > 0:
+                    to_send = send_buffer[:-hold_len]
+                    send_buffer = send_buffer[-hold_len:]
+                else:
+                    to_send = send_buffer
+                    send_buffer = ""
+                    
+                if to_send:
+                    await safe_ws_send({"type": "interview-chunk", "content": to_send})
+            
+            if is_final:
+                if send_buffer:
+                    await safe_ws_send({"type": "interview-chunk", "content": send_buffer})
+                    send_buffer = ""
+
+                if full_current_response.strip():
+                    await safe_ws_send({
+                        "type": "interview-finalize",
+                        "content": f"Интервьюер: — {full_current_response.strip()}"
+                    })
+                
+                full_current_response = ""
+                
+                if is_interview_over:
+                    await safe_ws_send({"type": "interview-end"})
+                    try:
+                        await websocket.close(1000, "Interview Finished")
+                    except Exception:
+                        pass
+        
+        @turn_lock.on_acquire()
+        async def on_response_start():
+            await safe_ws_send({"type": "interview-model"})
+
+        @turn_lock.on_release()
+        async def on_response_end():
+            await safe_ws_send({"type": "interview-user"})
+
+        @pc.on("connectionstatechange")
+        async def on_connectionstatechange():
+            if pc.connectionState == "connected":
+                logger.info("Связь установлена.")
+                interviewer.input_queue.put_nowait(DIALOG_INIT_PROMPT)
+                task = asyncio.create_task(interviewer.stream_from_queue(handle_interviewer_response, turn_lock))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+            elif pc.connectionState in ["failed", "closed"]:
+                logger.info("Соединение разорвано или не удалось.")
+                try:
+                    await websocket.close(1000, "WebRTC connection failed")
+                except Exception:
+                    return
+        
+        @pc.on("track")
+        def on_track(track: MediaStreamTrack):
+            if track.kind == "audio":
+                # ВАЖНО: Мы передаем None вместо turn_lock.
+                # Фильтрация перебиваний вынесена в put_to_interviewer_queue.
+                # Если передать lock в вашу текущую версию consume_incoming_audio,
+                # случится UnboundLocalError переменной `frame`.
+                task = asyncio.create_task(consume_incoming_audio(
+                    track,
+                    outgoing_track.queue,
+                    put_to_interviewer_queue
+                ))
+                background_tasks.add(task)
+                task.add_done_callback(background_tasks.discard)
+                
+        try:
+            data = await websocket.receive_text()
+            offer_dict = json.loads(data)
+            offer = RTCSessionDescription(sdp=offer_dict["sdp"], type=offer_dict["type"])
+            await pc.setRemoteDescription(offer)
+
+            answer = await pc.createAnswer()
+            await pc.setLocalDescription(answer)
+            for _ in range(20):
+                if pc.iceGatheringState == "complete":
+                    break
+                await asyncio.sleep(0.1)
+            
+            print("Готовый SDP Backend'а:")
+            for line in pc.localDescription.sdp.splitlines():
+                if "a=candidate" in line:
+                    print(line)
+
+            await safe_ws_send({
+                "sdp": pc.localDescription.sdp,
+                "type": pc.localDescription.type
+            })
+
+            # Основной цикл сигналлинга WebRTC
+            while True:
+                data = await websocket.receive_text()
+                try:
+                    message = json.loads(data)
+                    if message.get("type") == "ice-candidate":
+                        candidate_info = message.get("candidate")
+                        if candidate_info and candidate_info.get("candidate"):
+                            candidate = candidate_from_sdp(candidate_info["candidate"])
+                            candidate.sdpMid = candidate_info.get("sdpMid")
+                            candidate.sdpMLineIndex = candidate_info.get("sdpMLineIndex")
+                            await pc.addIceCandidate(candidate)
+                            
+                except json.JSONDecodeError:
+                    pass
+                except Exception as parse_err:
+                    logger.error(f"Ошибка при разборе сообщения от клиента: {parse_err}")
+                    
+        except WebSocketDisconnect:
+            logger.info("WebSocket: Клиент отключился (WebSocketDisconnect)")
+        except Exception as e:
+            logger.error(f"WebSocket: Произошла непредвиденная ошибка: {e}")
+        finally:
+            logger.info("Закрытие RTCPeerConnection и остановка задач...")
+            await pc.close()
+            # Отменяем фоновые таски (генерацию LLM и прослушивание аудио)
+            for task in background_tasks:
+                task.cancel()

@@ -9,11 +9,11 @@ from faster_whisper import WhisperModel
 from silero import silero_tts
 
 from app.core.config import settings
+from app.core.types import AdvancedLock
 
 
 LOGGER = getLogger(settings.LOGGER)
 TESTING = os.getenv("TESTING", "0") == "1"
-
 MODEL_NAME = "Qwen/Qwen3.5-4B"
 QUANTIZATION_CONFIG = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -26,7 +26,16 @@ MODEL_KWARGS = {
     "dtype": torch.float16 if torch.cuda.is_available() else torch.float32,
 }
 
-gpu_lock = asyncio.Lock()
+gpu_lock = AdvancedLock()
+
+@gpu_lock.on_acquire()
+def gpu_lock_acquired():
+    LOGGER.info("GPU-LOCK захвачен.")
+
+@gpu_lock.on_release()
+def gpu_lock_released():
+    LOGGER.info("GPU-LOCK освобождён.")
+
 
 if TESTING:
     llm_pipeline = None

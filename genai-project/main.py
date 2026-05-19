@@ -23,7 +23,6 @@ from app.ui_legacy.dashboard_api import router as dashboard_router
 from app.ml_legacy.generator import generate_if_needed
 from app.ml_legacy.predictor import train_if_needed
 from app.core.config import settings
-from app.core.state import set_app_state
 from app.ai.models import llm_model, llm_tokenizer, gpu_lock
 
 if not TESTING:
@@ -104,5 +103,6 @@ if __name__ == "__main__":
     uvicorn.run("main:app",
         host="127.0.0.1",
         port=8000,
-        reload=os.getenv("RELOAD", "0") == "1",
+        # reload=True,
+        # reload=os.getenv("RELOAD", "0") == "1",
     )

@@ -23,8 +23,8 @@ KNOWN_HALLUCINATIONS = [
 
 
 class VoiceActivityDetector:
-    def __init__(self, sample_rate=48000, frame_duration_ms=20):
-        self.vad = webrtcvad.Vad(1) # Агрессивность (3 - самая высокая)
+    def __init__(self, sample_rate=48000, frame_duration_ms=20, agressivity: int = 3, silence_duration_ms = 2000):
+        self.vad = webrtcvad.Vad(3) # Агрессивность (3 - самая высокая)
         self.sample_rate = sample_rate
         self.frame_duration_ms = frame_duration_ms
         
@@ -36,7 +36,7 @@ class VoiceActivityDetector:
         self.is_speaking = False
         self.speech_frames = []
         self.silence_frames_count = 0
-        self.max_silence_frames = 15 # 15 * 20мс = 300мс тишины перед завершением
+        self.max_silence_frames = int(silence_duration_ms / frame_duration_ms) 
 
     def process_frame(self, frame_bytes: bytes):
         """
@@ -206,7 +206,8 @@ async def process_speech_pipeline(audio_bytes, handler: Callable[[str], Awaitabl
 async def consume_incoming_audio(
         track: MediaStreamTrack,
         outgoing_queue: asyncio.Queue,
-        fragment_handler: Callable[[str], Awaitable[None]]
+        fragment_handler: Callable[[str], Awaitable[None]],
+        lock: asyncio.Lock | None = None
         ):
     """
     Фоновая задача, которая непрерывно читает микрофон пользователя.
@@ -219,6 +220,14 @@ async def consume_incoming_audio(
         layout='mono', 
         rate=48000
     )
+    stt_queue = asyncio.Queue()
+
+    async def stt_worker():
+        while True:
+            audio_data = await stt_queue.get()
+            await process_speech_pipeline(audio_data, fragment_handler)
+            stt_queue.task_done()
+    worker_task = asyncio.create_task(stt_worker())
 
     try:
         while True:
@@ -239,20 +248,22 @@ async def consume_incoming_audio(
                     ...
                 elif event_type == 'speech_end':
                     # FRAGMENT PROCESSING #
-                    task = asyncio.create_task(process_speech_pipeline(data, fragment_handler))
+                    stt_queue.put_nowait(data)
                     # /FRAGMENT PROCESSING #
             
             # --- END PROCESSING LOGIC ---
             
-            if outgoing_queue.full():
-                try:
-                    outgoing_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
+            # if outgoing_queue.full():
+            #     try:
+            #         outgoing_queue.get_nowait()
+            #     except asyncio.QueueEmpty:
+            #         pass
             # await outgoing_queue.put(out_frame)
             
     except Exception as e:
         LOGGER.info(f"Входящий аудио поток завершен: {e}")
+    finally:
+        worker_task.cancel()
 
 async def stream_text_to_speech(
         text: str,

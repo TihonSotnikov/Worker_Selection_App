@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./Worker_Selection_App.db"
     UPLOAD_DIR: str = "/tmp/Worker_Selection_App_uploads"
     LOGGER: str = "uvicorn"
+    SERVER_ADDRESS: str = "37.192.171.4"
 
     model_config = ConfigDict(env_file=".env") # type: ignore
 

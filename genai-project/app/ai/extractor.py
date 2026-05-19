@@ -4,7 +4,7 @@ from logging import getLogger
 # import
 import outlines
 from time import time
-from transformers import AutoTokenizer, AutoModelForCausalLM, TextGenerationPipeline, PreTrainedTokenizer, PreTrainedModel, BatchEncoding
+from transformers import PreTrainedTokenizer, PreTrainedModel, BatchEncoding, GenerationConfig
 # from lmformatenforcer import JsonSchemaParser
 # from lmformatenforcer.integrations.transformers import (
 #     build_transformers_prefix_allowed_tokens_fn,
@@ -13,7 +13,7 @@ from colorama import init
 
 from app.core.schemas import CandidateSummary
 from app.core.config import settings
-from app.ai.models import gen_config
+from app.ai.models import gen_config, gpu_lock
 from outlines.inputs import Chat
 
 init(autoreset=True)
@@ -49,6 +49,13 @@ class CandidateSummary:
 Строки текста пиши на русском языке.
 Не добавляй ничего лишнего, соблюдай синтаксис JSON.
 """
+
+GEN_CFG = GenerationConfig(
+    max_new_tokens = 2048,
+    do_sample = False,
+    temperature = 1.0,
+    repetition_penalty = 1.0
+)
 
 
 class Extractor:
@@ -91,7 +98,7 @@ class Extractor:
             {"role": "user", "content": prompt},
         ])
         
-        output = self._generator(messages) # type: ignore
+        output = self._generator(messages, max_new_tokens=2048) # type: ignore
 
         sum_json_str = str(output).strip("\n ")
         sum_json_str = sum_json_str.replace("\t", "  ").replace("\n", " ")

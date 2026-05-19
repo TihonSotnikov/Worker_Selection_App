@@ -485,13 +485,22 @@ let isChatActive = false;
 let remoteAudioWs = null;
 let peerConnection = null;
 let localStream = null;
+let lineCursor;
 
 const remoteAudio = document.getElementById('remoteAudio');
 const dialogButton = document.getElementById('startInterview');
 const dialogBox = document.getElementById('dialogBox')
 const remoteAudioWsUrl = `${wsBaseUrl}/webrtc`
 const rtcConfig = {
-    iceServers:[{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers:[
+      {
+        urls: [
+          "stun:stun.cloudflare.com:3478",
+          "stun:stun.sipnet.ru:3478",
+          "stun:stun.nextcloud.com:443",
+        ]
+      }
+    ]
 };
 
 function teardownVoice() {
@@ -530,9 +539,23 @@ async function setupVoice() {
         remoteAudioWs = new WebSocket(remoteAudioWsUrl);
 
         await new Promise((resolve, reject) => {
-          remoteAudioWs.onopen = () => resolve();
+          remoteAudioWs.onopen = () => {
+            setTimeout(() => {
+              if (remoteAudioWs.readyState === WebSocket.OPEN) {
+                isAccepted = true;
+                resolve();
+              }
+            }, 100);
+          }
           remoteAudioWs.onerror = (err) => reject(new Error("Ошибка подключения WebSocket"));
-          remoteAudioWs.onclose = () => reject(new Error("WebSocket закрылся до установки соединения"));
+          remoteAudioWs.onclose = (event) => {
+            const reason = event.reason || "Без объяснения причины";
+            if (event.code === 1013) {
+              reject(new Error(`Попробуйте позже: ${reason}`));
+            } else {
+              reject(new Error(`WebSocket закрылся до установки соединения. Код: ${event.code}, Причина: ${reason}`));
+            }
+          };
         });
 
         console.log("WebSocket подключен");
@@ -544,19 +567,25 @@ async function setupVoice() {
             await peerConnection.setRemoteDescription(new RTCSessionDescription(data));
           } else if (data.type === 'ice-candidate') {
             await peerConnection.addIceCandidate(data.candidate);
-          } else if (data.type === 'interview-echo') {
-            const p = document.createElement('p')
-            p.innerText = `Вы: — ${data.content}`
-            dialogBox.appendChild(p)
-          } else if (data.type === 'interview-response') {
-            const p = document.createElement('p')
-            p.innerText = `Интервьюер: — ${data.content}`
-            dialogBox.appendChild(p)
+          } else if (data.type === 'interview-user') {
+            lineCursor = document.createElement('p')
+            lineCursor.textContent = "Вы: — "
+            dialogBox.appendChild(lineCursor)
+          } else if (data.type === 'interview-model') {
+            lineCursor = document.createElement('p')
+            lineCursor.textContent = "Интервьюер: — "
+            dialogBox.appendChild(lineCursor)
+          } else if (data.type === 'interview-chunk') {
+            lineCursor.textContent += data.content
+          } else if (data.type === 'interview-finalize') {
+            lineCursor.textContent = data.content
           } else if (data.type === 'interview-end') {
             teardownVoice()
             dialogButton.textContent = 'Начать интервью';
             dialogButton.classList.remove('recording')
             dialogButton.classList.add('primary')
+          } else if (data.type === 'custom-toast') {
+            showToast(data.content)
           }
         };
 
@@ -567,7 +596,7 @@ async function setupVoice() {
             autoGainControl: false
           } */
         });
-        peerConnection = new RTCPeerConnection();
+        peerConnection = new RTCPeerConnection(rtcConfig);
         
         localStream.getTracks().forEach(track => {
           peerConnection.addTrack(track, localStream);
@@ -601,9 +630,8 @@ async function setupVoice() {
         };
 
     } catch (error) {
-        console.error("Не удалось запустить голос:", error);
-        showToast("Не удалось запустить голосовую связь");
         teardownVoice();
+        throw error;
     }
 }
 
@@ -611,13 +639,18 @@ async function voiceButtonHandler(event) {
   event.preventDefault();
 
   if (!isChatActive) {
-    await setupVoice();
-
-    isChatActive = true;
-    dialogButton.textContent = 'Завершить интервью';
-    dialogButton.classList.remove('primary');
-    dialogButton.classList.add('recording');
-    dialogBox.classList.remove('hidden')
+    try {
+      await setupVoice();
+      isChatActive = true;
+      dialogButton.textContent = 'Завершить интервью';
+      dialogButton.classList.remove('primary');
+      dialogButton.classList.add('recording');
+      dialogBox.classList.remove('hidden')
+  } catch (error) {
+      console.error("Не удалось запустить интервью:", error);
+        showToast(`Не удалось запустить интервью:\n${error}`);
+      console.log(error)
+    }
   }
 
   else {
